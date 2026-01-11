@@ -47,6 +47,7 @@ pico_enable_stdio_usb(tft_lcd 0)
 # Add the standard library to the build
 target_link_libraries(tft_lcd
         pico_stdlib
+        pico_stdlib_headers
         hardware_spi)
 
 # Add the standard include files to the build

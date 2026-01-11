@@ -1,130 +1,113 @@
+/**
+ * pico-miniboy: Landscape with correct digits 0-9
+ */
+
 #include "pico/stdlib.h"
 #include "hardware/spi.h"
 
-#define USE_TFT 1  // Toggle: 0=LED only, 1=TFT+LED
+#define TFT_WIDTH  320
+#define TFT_HEIGHT 240
 
-#define LED_PIN 25
-#define TFT_WIDTH  240
-#define TFT_HEIGHT 320
-
-// TFT pins
-#define PIN_MISO 16
-#define PIN_CS   17
-#define PIN_SCK  18
+#define PIN_CS 17
+#define PIN_SCK 18
 #define PIN_MOSI 19
-#define PIN_RST  20
-#define PIN_DC   21
+#define PIN_RST 20
+#define PIN_DC 21
+#define PIN_BL 22
 
-#if USE_TFT
-void tft_cmd(uint8_t cmd) {
-    gpio_put(PIN_DC, 0);
+void tft_cmd(uint8_t c) {
+    gpio_put(PIN_DC, 0); 
     gpio_put(PIN_CS, 0);
-    spi_write_blocking(spi0, &cmd, 1);
+    spi_write_blocking(spi0, &c, 1);
     gpio_put(PIN_CS, 1);
 }
 
-void tft_data(uint8_t data) {
-    gpio_put(PIN_DC, 1);
+void tft_data(uint8_t d) {
+    gpio_put(PIN_DC, 1); 
     gpio_put(PIN_CS, 0);
-    spi_write_blocking(spi0, &data, 1);
+    spi_write_blocking(spi0, &d, 1);
     gpio_put(PIN_CS, 1);
 }
 
 void tft_init() {
-    gpio_put(PIN_RST, 0); sleep_ms(100);
-    gpio_put(PIN_RST, 1); sleep_ms(100);
-
+    gpio_put(PIN_RST, 0); sleep_ms(10);
+    gpio_put(PIN_RST, 1); sleep_ms(120);
+    
     tft_cmd(0x01); sleep_ms(150);
-    tft_cmd(0x11); sleep_ms(150);
-    tft_cmd(0x36); tft_data(0x48);
+    tft_cmd(0x11); sleep_ms(10);
+    tft_cmd(0x36); tft_data(0x68);
     tft_cmd(0x3A); tft_data(0x55);
-    tft_cmd(0xB1); tft_data(0x00); tft_data(0x18);
-    tft_cmd(0xC0); tft_data(0x21);
-    tft_cmd(0xC1); tft_data(0x12);
-    tft_cmd(0xC7); tft_data(0x20);
-    tft_cmd(0x21);
-    tft_cmd(0x2A); tft_data(0x00); tft_data(0x00); tft_data(0x00); tft_data(0xEF);
-    tft_cmd(0x2B); tft_data(0x00); tft_data(0x00); tft_data(0x01); tft_data(0x3F);
     tft_cmd(0x29);
+    
+    gpio_put(PIN_BL, 1);
 }
 
-uint8_t tft_progress = 0;  // 0-255 progress indicator
-void tft_fill_screen_nonblock(uint16_t color) {
-    static uint32_t pixel_count = 0;
-    static uint16_t pixel = 0;
-
-    if (pixel_count == 0) {
-        // Start new fill
-        tft_cmd(0x2C);
-        gpio_put(PIN_DC, 1);
-        gpio_put(PIN_CS, 0);
-        pixel = (color >> 8) | (color << 8);
-    }
-
-    // Fill 512 pixels per call (~0.1ms, non-blocking)
-    for (int i = 0; i < 256; ++i) {
-        if (pixel_count >= (uint32_t)TFT_WIDTH * TFT_HEIGHT) break;
+void tft_fill_rect(int x, int y, int w, int h, uint16_t color) {
+    tft_cmd(0x2A); 
+    tft_data(x >> 8); tft_data(x); 
+    tft_data((x+w-1) >> 8); tft_data(x+w-1);
+    
+    tft_cmd(0x2B); 
+    tft_data(y >> 8); tft_data(y); 
+    tft_data((y+h-1) >> 8); tft_data(y+h-1);
+    
+    tft_cmd(0x2C);
+    gpio_put(PIN_DC, 1); 
+    gpio_put(PIN_CS, 0);
+    
+    uint16_t pixel = (color >> 8) | (color << 8);
+    for (uint32_t i = 0; i < (uint32_t)w * h; i++) {
         spi_write_blocking(spi0, (uint8_t*)&pixel, 2);
-        pixel_count++;
-        tft_progress = (pixel_count * 255) / (TFT_WIDTH * TFT_HEIGHT);
     }
+    gpio_put(PIN_CS, 1);
+}
 
-    if (pixel_count >= (uint32_t)TFT_WIDTH * TFT_HEIGHT) {
-        gpio_put(PIN_CS, 1);
-        pixel_count = 0;
+// 5x7 font for digits 0-9
+const uint8_t font5x7[10][7] = {
+    {0x0E,0x11,0x13,0x15,0x19,0x11,0x0E}, // 0
+    {0x04,0x0C,0x04,0x04,0x04,0x04,0x0E}, // 1
+    {0x0E,0x11,0x01,0x02,0x04,0x08,0x1F}, // 2
+    {0x1F,0x02,0x04,0x02,0x01,0x11,0x0E}, // 3
+    {0x02,0x06,0x0A,0x12,0x1F,0x02,0x02}, // 4
+    {0x1F,0x10,0x1E,0x01,0x01,0x11,0x0E}, // 5
+    {0x06,0x08,0x10,0x1E,0x11,0x11,0x0E}, // 6
+    {0x1F,0x01,0x02,0x04,0x08,0x08,0x08}, // 7
+    {0x0E,0x11,0x11,0x0E,0x11,0x11,0x0E}, // 8
+    {0x0E,0x11,0x11,0x0F,0x01,0x02,0x0C}  // 9
+};
+
+void draw_digit(int x, int y, int digit, uint16_t fg, uint16_t bg) {
+    for (int row = 0; row < 7; row++) {
+        uint8_t bits = font5x7[digit][row];
+        for (int col = 0; col < 5; col++) {
+            uint16_t c = (bits & (1 << (4 - col))) ? fg : bg;
+            tft_fill_rect(x + col*3, y + row*3, 3, 3, c);
+        }
     }
 }
-#endif
 
 int main() {
-    uint32_t led_time = 0;
-    uint32_t tft_time = 0;
-    int color_idx = 0;
-    uint16_t colors[] = {0xF800, 0x07E0, 0x001F, 0xFFFF, 0xF81F};
-    bool led_state = false;  // Add this
-
-    // Always init LED
-    gpio_init(LED_PIN);
-    gpio_set_dir(LED_PIN, GPIO_OUT);
-
-#if USE_TFT
-    // TFT pins
     gpio_init(PIN_CS); gpio_set_dir(PIN_CS, GPIO_OUT); gpio_put(PIN_CS, 1);
-    gpio_init(PIN_RST); gpio_set_dir(PIN_RST, GPIO_OUT); gpio_put(PIN_RST, 1);
+    gpio_init(PIN_RST); gpio_set_dir(PIN_RST, GPIO_OUT);
     gpio_init(PIN_DC); gpio_set_dir(PIN_DC, GPIO_OUT);
+    gpio_init(PIN_BL); gpio_set_dir(PIN_BL, GPIO_OUT);
 
-    spi_init(spi0, 10 * 1000 * 1000);
+    spi_init(spi0, 20 * 1000 * 1000);
     gpio_set_function(PIN_SCK, GPIO_FUNC_SPI);
     gpio_set_function(PIN_MOSI, GPIO_FUNC_SPI);
-    gpio_set_function(PIN_MISO, GPIO_FUNC_SPI);
+    gpio_set_function(16, GPIO_FUNC_SPI);
 
     tft_init();
-#endif
+
+    // Black background
+    tft_fill_rect(0, 0, TFT_WIDTH, TFT_HEIGHT, 0x0000);
+
+    // Draw digits 0-9 horizontally from left to right
+    for (int i = 0; i < 10; i++) {
+        draw_digit(15 + i * 30, 25, i, 0xFFFF, 0x0000);
+    }
 
     while (1) {
-        uint32_t now = time_us_32();
-
-        // LED blink (fixed)
-        if ((now - led_time) > 250000) {
-            led_state = !led_state;  // Toggle
-            gpio_put(LED_PIN, led_state);
-            led_time = now;
-        }
-
-#if USE_TFT
-        // TFT color cycle (every 10s, non-blocking fill)
-        if ((now - tft_time) > 10000000) {  // 10s per color
-            tft_fill_screen_nonblock(colors[color_idx]);
-            color_idx = (color_idx + 1) % 5;
-            tft_time = now;
-        } else {
-            // Continue current fill
-            tft_fill_screen_nonblock(colors[color_idx]);
-        }
-#else
-        // LED-only: nothing extra
-#endif
-
-        tight_loop_contents();  // Low power
+        tight_loop_contents();
     }
 }
