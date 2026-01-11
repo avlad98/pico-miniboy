@@ -28,36 +28,40 @@ set(PICO_BOARD pico CACHE STRING "Board type")
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
-project(tft_lcd C CXX ASM)
+project(pico_miniboy C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
-# Add executable. Default name is the project name, version 0.1
+# Add executable with all source files
+add_executable(pico_miniboy 
+    main.c
+    system_config.c
+    display_driver.c
+    dma_spi.c
+    framebuffer.c
+    font.c
+)
 
-add_executable(tft_lcd tft_lcd.c )
+pico_set_program_name(pico_miniboy "pico_miniboy")
+pico_set_program_version(pico_miniboy "0.1")
 
-pico_set_program_name(tft_lcd "tft_lcd")
-pico_set_program_version(tft_lcd "0.1")
-
-# Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(tft_lcd 0)
-pico_enable_stdio_usb(tft_lcd 0)
+# Enable USB output for printf
+pico_enable_stdio_uart(pico_miniboy 0)
+pico_enable_stdio_usb(pico_miniboy 1)
 
 # Add the standard library to the build
-target_link_libraries(tft_lcd
+target_link_libraries(pico_miniboy
     pico_stdlib
     hardware_spi
     hardware_dma
+    hardware_clocks
+    hardware_vreg
 )
 
 # Add the standard include files to the build
-target_include_directories(tft_lcd PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}
+target_include_directories(pico_miniboy PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}
 )
 
-pico_add_extra_outputs(tft_lcd)
-
-pico_enable_stdio_usb(tft_lcd 1)
-pico_enable_stdio_uart(tft_lcd 0)
-
+pico_add_extra_outputs(pico_miniboy)
