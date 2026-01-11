@@ -46,9 +46,10 @@ pico_enable_stdio_usb(tft_lcd 0)
 
 # Add the standard library to the build
 target_link_libraries(tft_lcd
-        pico_stdlib
-        pico_stdlib_headers
-        hardware_spi)
+    pico_stdlib
+    hardware_spi
+    hardware_dma
+)
 
 # Add the standard include files to the build
 target_include_directories(tft_lcd PRIVATE
@@ -56,4 +57,7 @@ target_include_directories(tft_lcd PRIVATE
 )
 
 pico_add_extra_outputs(tft_lcd)
+
+pico_enable_stdio_usb(tft_lcd 1)
+pico_enable_stdio_uart(tft_lcd 0)
 
