@@ -1,10 +1,12 @@
 /**
- * pico-miniboy: Framebuffer stored as bytes (no swap needed)
+ * pico-miniboy: WORKING DMA implementation
  */
 
 #include "pico/stdlib.h"
 #include "hardware/spi.h"
 #include "hardware/clocks.h"
+#include "hardware/dma.h"
+#include "hardware/vreg.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -18,8 +20,9 @@
 #define PIN_DC 21
 #define PIN_BL 22
 
-// Framebuffer as uint8_t (big-endian RGB565)
 static uint8_t framebuffer[TFT_WIDTH * TFT_HEIGHT * 2];
+int dma_chan;
+dma_channel_config dma_cfg;
 
 void tft_cmd(uint8_t c) {
     gpio_put(PIN_DC, 0); 
@@ -61,21 +64,29 @@ void tft_swap_buffer() {
     gpio_put(PIN_DC, 1); 
     gpio_put(PIN_CS, 0);
     
-    // Keep CS low the entire time, send full buffer
-    uint8_t *ptr = framebuffer;
-    size_t len = TFT_WIDTH * TFT_HEIGHT * 2;
+    // Verify DMA is working
+    uint32_t start = time_us_32();
     
-    spi_write_blocking(spi0, ptr, len);
+    // Simple DMA setup
+    dma_channel_set_read_addr(dma_chan, framebuffer, false);
+    dma_channel_set_write_addr(dma_chan, &spi_get_hw(spi0)->dr, false);
+    dma_channel_set_trans_count(dma_chan, TFT_WIDTH * TFT_HEIGHT * 2, true); // true = start
+    
+    dma_channel_wait_for_finish_blocking(dma_chan);
+    
+    // Wait for SPI FIFO
+    while (spi_is_busy(spi0)) tight_loop_contents();
+    
+    uint32_t dma_time = time_us_32() - start;
+    // printf("DMA transfer took: %lu us\n", dma_time);
     
     gpio_put(PIN_CS, 1);
 }
 
-// Ultra-fast clear with 32-bit writes (correct byte order)
+
 void fb_clear(uint16_t color) {
     uint8_t hi = color >> 8;
     uint8_t lo = color & 0xFF;
-    
-    // Little-endian: writes lo, hi, lo, hi to memory
     uint32_t color32 = (lo << 24) | (hi << 16) | (lo << 8) | hi;
     
     uint32_t *ptr32 = (uint32_t*)framebuffer;
@@ -83,15 +94,6 @@ void fb_clear(uint16_t color) {
     
     while (count--) {
         *ptr32++ = color32;
-    }
-}
-
-
-void fb_set_pixel(int x, int y, uint16_t color) {
-    if (x >= 0 && x < TFT_WIDTH && y >= 0 && y < TFT_HEIGHT) {
-        int idx = (y * TFT_WIDTH + x) * 2;
-        framebuffer[idx] = color >> 8;
-        framebuffer[idx + 1] = color & 0xFF;
     }
 }
 
@@ -177,31 +179,44 @@ void fb_draw_fps(int fps) {
 }
 
 int main() {
-    set_sys_clock_khz(270000, true);
+    // Set CPU speed first
+    vreg_set_voltage(VREG_VOLTAGE_1_25);
+    sleep_ms(10);
+    
+    set_sys_clock_khz(280000, true);
     
     uint32_t freq = clock_get_hz(clk_sys);
-    clock_configure(clk_peri,
-                    0,
-                    CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLK_SYS,
-                    freq,
-                    freq);
+    clock_configure(clk_peri, 0, CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLK_SYS, freq, freq);
     
     stdio_init_all();
     sleep_ms(2000);
     
+    // GPIO setup
     gpio_init(PIN_CS); gpio_set_dir(PIN_CS, GPIO_OUT); gpio_put(PIN_CS, 1);
     gpio_init(PIN_RST); gpio_set_dir(PIN_RST, GPIO_OUT);
     gpio_init(PIN_DC); gpio_set_dir(PIN_DC, GPIO_OUT);
     gpio_init(PIN_BL); gpio_set_dir(PIN_BL, GPIO_OUT);
-
-    spi_init(spi0, 120 * 1000 * 1000);
+    
+    // Init SPI at SLOW speed for display init
+    spi_init(spi0, 10 * 1000 * 1000);  // 10MHz for init
     gpio_set_function(PIN_SCK, GPIO_FUNC_SPI);
     gpio_set_function(PIN_MOSI, GPIO_FUNC_SPI);
     gpio_set_function(16, GPIO_FUNC_SPI);
-
-    tft_init();
     
-    printf("Profiling started...\n");
+    tft_init();  // Init at safe 10MHz
+    sleep_ms(100);
+    
+    // NOW speed up SPI for framebuffer transfers
+    uint actual = spi_init(spi0, 70 * 1000 * 1000);
+    
+    // DMA setup
+    dma_chan = dma_claim_unused_channel(true);
+    dma_channel_config cfg = dma_channel_get_default_config(dma_chan);
+    channel_config_set_transfer_data_size(&cfg, DMA_SIZE_8);
+    channel_config_set_dreq(&cfg, spi_get_dreq(spi0, true));
+    channel_config_set_read_increment(&cfg, true);
+    channel_config_set_write_increment(&cfg, false);
+    dma_channel_set_config(dma_chan, &cfg, false);
 
     uint32_t frame_count = 0;
     uint32_t fps_timer = time_us_32();
@@ -213,8 +228,8 @@ int main() {
     
     int circle_x = 160;
     int circle_y = 120;
-    int circle_vx = 4;
-    int circle_vy = 3;
+    int circle_vx = 5;
+    int circle_vy = 4;
     int circle_radius = 20;
 
     while (1) {
@@ -251,6 +266,11 @@ int main() {
             current_fps = frame_count;
             printf("Clear: %lu us, Circle: %lu us, Swap: %lu us | FPS: %d\n", 
                    clear_time, circle_time, swap_time, current_fps);
+
+            printf("=== SPI INFO ===\n");
+            printf("Requested: 125,000,000 Hz\n");
+            printf("Actual:    %u Hz\n", actual);
+            printf("Peripheral clock: %u Hz\n", clock_get_hz(clk_peri));
             frame_count = 0;
             fps_timer = now;
         }
