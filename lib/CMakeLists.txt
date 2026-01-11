@@ -1,0 +1,43 @@
+# Library definitions for pico-miniboy
+
+# System Config Library
+add_library(system_config STATIC
+    system_config/system_config.c
+)
+target_include_directories(system_config PUBLIC
+    system_config
+)
+target_link_libraries(system_config PUBLIC
+    pico_stdlib
+    hardware_clocks
+    hardware_vreg
+)
+
+# Display Library
+add_library(display STATIC
+    display/display_driver.c
+    display/dma_spi.c
+)
+target_include_directories(display PUBLIC
+    display
+)
+target_link_libraries(display PUBLIC
+    pico_stdlib
+    hardware_spi
+    hardware_dma
+    hardware_gpio
+    system_config
+)
+
+# Graphics Library
+add_library(graphics STATIC
+    graphics/framebuffer.c
+    graphics/font.c
+)
+target_include_directories(graphics PUBLIC
+    graphics
+)
+target_link_libraries(graphics PUBLIC
+    pico_stdlib
+    display
+)
