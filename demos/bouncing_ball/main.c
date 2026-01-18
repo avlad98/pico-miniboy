@@ -7,8 +7,8 @@
 #include <stdio.h>
 
 int main() {
-    // System configuration - choose performance profile
-    system_config_t sys_cfg = PERFORMANCE_STABLE;  // 270MHz/67.5MHz = 46-47 FPS
+    // System configuration - LUDICROUS (266MHz CPU / 133MHz SPI)
+    system_config_t sys_cfg = PERFORMANCE_LUDICROUS; 
     system_init(&sys_cfg);
     
     stdio_init_all();
@@ -59,7 +59,11 @@ int main() {
     while (1) {
         uint32_t t0 = time_us_32();
         
-        // Clear screen
+        // IMPORTANT: Wait for the previous frame to finish sending 
+        // to the display before we touch the framebuffer memory.
+        framebuffer_wait_last_swap();
+        
+        // Clear screen (Red background for BGR displays)
         framebuffer_clear(0x0010);
         uint32_t t1 = time_us_32();
         
@@ -81,8 +85,10 @@ int main() {
         // Draw FPS
         font_draw_number(10, 5, current_fps, 0xFFFF, 0x0000, &font_5x7);
         
-        // Send to display
-        framebuffer_swap();
+        // Send to display (Asynchronous)
+        // This returns immediately, allowing the next loop to clear/draw
+        // while the SPI hardware is still sending the current buffer.
+        framebuffer_swap_async();
         uint32_t t3 = time_us_32();
         
         frame_count++;

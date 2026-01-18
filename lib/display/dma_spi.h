@@ -12,5 +12,6 @@ void dma_spi_transfer(const uint8_t *data, uint32_t len);
 
 // Wait for current transfer to complete
 void dma_spi_wait(void);
+bool dma_spi_is_busy(void);
 
 #endif

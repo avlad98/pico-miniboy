@@ -4,9 +4,10 @@
 #include "pico/stdlib.h"
 
 // Performance profiles with expected FPS
-#define PERFORMANCE_STABLE     { .cpu_mhz = 270, .spi_hz_init = 10000000, .spi_hz_fast = 67500000 }  // 46-47 FPS (rock solid)
-#define PERFORMANCE_COLD_BOOST { .cpu_mhz = 280, .spi_hz_init = 10000000, .spi_hz_fast = 70000000 }  // 47-51 FPS (glitchy, temp sensitive)
-#define PERFORMANCE_UNSTABLE   { .cpu_mhz = 300, .spi_hz_init = 10000000, .spi_hz_fast = 75000000 }  // USB breaks
+#define PERFORMANCE_STABLE      { .cpu_mhz = 240, .spi_hz_init = 10000000, .spi_hz_fast = 60000000 }  // 42 FPS (Standard)
+#define PERFORMANCE_BALANCED    { .cpu_mhz = 270, .spi_hz_init = 10000000, .spi_hz_fast = 67500000 }  // 47 FPS (Rock solid)
+#define PERFORMANCE_TURBO_MAX   { .cpu_mhz = 160, .spi_hz_init = 10000000, .spi_hz_fast = 80000000 }  // 58-62 FPS (Sweet spot for many ILI9341)
+#define PERFORMANCE_LUDICROUS   { .cpu_mhz = 200, .spi_hz_init = 10000000, .spi_hz_fast = 100000000 } // ~65-70 FPS (The "Real" Ceiling)
 
 typedef struct {
     uint32_t cpu_mhz;

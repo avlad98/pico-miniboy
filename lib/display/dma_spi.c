@@ -34,3 +34,7 @@ void dma_spi_wait(void) {
         tight_loop_contents();
     }
 }
+
+bool dma_spi_is_busy(void) {
+    return dma_channel_is_busy(dma_channel) || spi_is_busy(dma_spi_instance);
+}

@@ -17,7 +17,13 @@ void framebuffer_set_pixel(int x, int y, uint16_t color);
 void framebuffer_fill_rect(int x, int y, int w, int h, uint16_t color);
 void framebuffer_fill_circle(int cx, int cy, int radius, uint16_t color);
 
-// Send framebuffer to display
+// Send framebuffer to display (blocking)
 void framebuffer_swap(void);
+
+// Start swap and return immediately (non-blocking)
+void framebuffer_swap_async(void);
+
+// Wait for previous async swap to complete
+void framebuffer_wait_last_swap(void);
 
 #endif

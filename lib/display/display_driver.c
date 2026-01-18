@@ -26,6 +26,12 @@ void display_init(const display_config_t *config, const system_config_t *sys_con
     gpio_set_function(config->pin_mosi, GPIO_FUNC_SPI);
     gpio_set_function(config->pin_miso, GPIO_FUNC_SPI);
     
+    // Improve signal integrity for high-speed SPI
+    gpio_set_drive_strength(config->pin_sck, GPIO_DRIVE_STRENGTH_12MA);
+    gpio_set_slew_rate(config->pin_sck, GPIO_SLEW_RATE_FAST);
+    gpio_set_drive_strength(config->pin_mosi, GPIO_DRIVE_STRENGTH_12MA);
+    gpio_set_slew_rate(config->pin_mosi, GPIO_SLEW_RATE_FAST);
+    
     // Hardware reset
     gpio_put(config->pin_rst, 0);
     sleep_ms(10);
@@ -48,7 +54,7 @@ void display_init(const display_config_t *config, const system_config_t *sys_con
     display_cmd(0x29); // Display ON
     
     // Speed up SPI for framebuffer transfers
-    uint32_t actual = spi_init(config->spi, sys_config->spi_hz_fast);
+    uint32_t actual = spi_set_baudrate(config->spi, sys_config->spi_hz_fast);
     system_set_actual_spi_hz(actual);
     
     // Backlight on

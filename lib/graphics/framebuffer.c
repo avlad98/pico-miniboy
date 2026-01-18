@@ -33,12 +33,15 @@ uint32_t framebuffer_get_size(void) {
 void framebuffer_clear(uint16_t color) {
     uint8_t hi = color >> 8;
     uint8_t lo = color & 0xFF;
+    // On Little-Endian RP2040, we want:
+    // Memory Index 0: hi, 1: lo, 2: hi, 3: lo
+    // This corresponds to a 32-bit word: (lo << 24) | (hi << 16) | (lo << 8) | hi
     uint32_t color32 = (lo << 24) | (hi << 16) | (lo << 8) | hi;
     
     uint32_t *ptr32 = (uint32_t*)framebuffer;
-    int count = fb_size / 4;
+    uint32_t *end32 = (uint32_t*)(framebuffer + fb_size);
     
-    while (count--) {
+    while (ptr32 < end32) {
         *ptr32++ = color32;
     }
 }
@@ -73,42 +76,51 @@ void framebuffer_fill_rect(int x, int y, int w, int h, uint16_t color) {
 }
 
 void framebuffer_fill_circle(int cx, int cy, int radius, uint16_t color) {
-    uint8_t hi = color >> 8;
-    uint8_t lo = color & 0xFF;
-    int r2 = radius * radius;
-    
-    for (int y = -radius; y <= radius; y++) {
-        int py = cy + y;
-        if (py >= 0 && py < fb_height) {
-            int x_extent = 0;
-            while (x_extent * x_extent + y * y <= r2) x_extent++;
-            
-            int x_start = cx - x_extent;
-            int x_end = cx + x_extent;
-            
-            if (x_start < 0) x_start = 0;
-            if (x_end >= fb_width) x_end = fb_width - 1;
-            
-            for (int x = x_start; x <= x_end; x++) {
-                int idx = (py * fb_width + x) * 2;
-                framebuffer[idx] = hi;
-                framebuffer[idx + 1] = lo;
-            }
+    int x = radius;
+    int y = 0;
+    int err = 0;
+
+    while (x >= y) {
+        // Draw horizontal lines to fill the circle
+        for (int i = cx - x; i <= cx + x; i++) {
+            framebuffer_set_pixel(i, cy + y, color);
+            framebuffer_set_pixel(i, cy - y, color);
+        }
+        for (int i = cx - y; i <= cx + y; i++) {
+            framebuffer_set_pixel(i, cy + x, color);
+            framebuffer_set_pixel(i, cy - x, color);
+        }
+
+        y++;
+        err += 1 + 2 * y;
+        if (2 * (err - x) + 1 > 0) {
+            x--;
+            err += 1 - 2 * x;
         }
     }
 }
 
+static bool dma_active = false;
+
 void framebuffer_swap(void) {
-    // Set display window to full screen
-    display_set_window(0, 0, fb_width - 1, fb_height - 1);
-    
-    // Start write mode
-    display_start_write();
-    
-    // Transfer via DMA
-    dma_spi_transfer(framebuffer, fb_size);
+    framebuffer_swap_async();
     dma_spi_wait();
-    
-    // End write mode
     display_end_write();
+    dma_active = false;
+}
+
+void framebuffer_swap_async(void) {
+    // Note: Do NOT wait here unless necessary, we wait at the start of the next frame
+    display_set_window(0, 0, fb_width - 1, fb_height - 1);
+    display_start_write();
+    dma_spi_transfer(framebuffer, fb_size);
+    dma_active = true;
+}
+
+void framebuffer_wait_last_swap(void) {
+    if (dma_active) {
+        dma_spi_wait();
+        display_end_write();
+        dma_active = false;
+    }
 }
