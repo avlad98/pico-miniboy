@@ -8,11 +8,18 @@ static uint8_t *framebuffer = NULL;
 static uint16_t fb_width = 0;
 static uint16_t fb_height = 0;
 static uint32_t fb_size = 0;
+static display_pixel_format_t fb_format;
 
-bool framebuffer_init(uint16_t width, uint16_t height) {
+bool framebuffer_init(uint16_t width, uint16_t height, display_pixel_format_t format) {
     fb_width = width;
     fb_height = height;
-    fb_size = width * height * 2;  // RGB565 = 2 bytes per pixel
+    fb_format = format;
+    
+    if (format == PIXEL_FORMAT_RGB565) {
+        fb_size = width * height * 2;
+    } else {
+        fb_size = (width * height * 3) / 2;
+    }
     
     framebuffer = (uint8_t*)malloc(fb_size);
     if (framebuffer == NULL) {
@@ -31,29 +38,61 @@ uint32_t framebuffer_get_size(void) {
 }
 
 void framebuffer_clear(uint16_t color) {
-    uint8_t hi = color >> 8;
-    uint8_t lo = color & 0xFF;
-    // On Little-Endian RP2040, we want:
-    // Memory Index 0: hi, 1: lo, 2: hi, 3: lo
-    // This corresponds to a 32-bit word: (lo << 24) | (hi << 16) | (lo << 8) | hi
-    uint32_t color32 = (lo << 24) | (hi << 16) | (lo << 8) | hi;
-    
-    uint32_t *ptr32 = (uint32_t*)framebuffer;
-    uint32_t *end32 = (uint32_t*)(framebuffer + fb_size);
-    
-    while (ptr32 < end32) {
-        *ptr32++ = color32;
+    if (fb_format == PIXEL_FORMAT_RGB565) {
+        uint8_t hi = color >> 8;
+        uint8_t lo = color & 0xFF;
+        uint32_t color32 = (lo << 24) | (hi << 16) | (lo << 8) | hi;
+        
+        uint32_t *ptr32 = (uint32_t*)framebuffer;
+        uint32_t *end32 = (uint32_t*)(framebuffer + fb_size);
+        while (ptr32 < end32) *ptr32++ = color32;
+    } else {
+        // RGB444: 3 bytes for 2 pixels. 
+        // Pixel 1: [R1 G1] [B1 R2] [G2 B2]
+        uint8_t r = (color >> 11) & 0x1F; // 5 bits to 4
+        uint8_t g = (color >> 5) & 0x3F;  // 6 bits to 4
+        uint8_t b = (color & 0x1F);      // 5 bits to 4
+        uint8_t r4 = r >> 1; uint8_t g4 = g >> 2; uint8_t b4 = b >> 1;
+        
+        uint16_t p1 = (r4 << 8) | (g4 << 4) | b4;
+        uint8_t b0 = (p1 >> 4) & 0xFF; // R G
+        uint8_t b1 = ((p1 & 0x0F) << 4) | (r4); // B R
+        uint8_t b2 = (g4 << 4) | b4; // G B
+        
+        for (int i = 0; i < fb_size; i += 3) {
+            framebuffer[i] = b0;
+            framebuffer[i+1] = b1;
+            framebuffer[i+2] = b2;
+        }
     }
 }
 
 void framebuffer_set_pixel(int x, int y, uint16_t color) {
-    if (x < 0 || x >= fb_width || y < 0 || y >= fb_height) {
-        return;
-    }
+    if (x < 0 || x >= fb_width || y < 0 || y >= fb_height) return;
     
-    int idx = (y * fb_width + x) * 2;
-    framebuffer[idx] = color >> 8;
-    framebuffer[idx + 1] = color & 0xFF;
+    if (fb_format == PIXEL_FORMAT_RGB565) {
+        int idx = (y * fb_width + x) * 2;
+        framebuffer[idx] = color >> 8;
+        framebuffer[idx + 1] = color & 0xFF;
+    } else {
+        // RGB444: 3 bytes for 2 pixels
+        int pixel_idx = y * fb_width + x;
+        int byte_idx = (pixel_idx / 2) * 3;
+        
+        uint8_t r4 = ((color >> 11) & 0x1F) >> 1;
+        uint8_t g4 = ((color >> 5) & 0x3F) >> 2;
+        uint8_t b4 = (color & 0x1F) >> 1;
+        
+        if (pixel_idx % 2 == 0) {
+            // Even pixel: [R1 G1] [B1 ..]
+            framebuffer[byte_idx] = (r4 << 4) | g4;
+            framebuffer[byte_idx+1] = (b4 << 4) | (framebuffer[byte_idx+1] & 0x0F);
+        } else {
+            // Odd pixel: [.. ..] [.. R2] [G2 B2]
+            framebuffer[byte_idx+1] = (framebuffer[byte_idx+1] & 0xF0) | r4;
+            framebuffer[byte_idx+2] = (g4 << 4) | b4;
+        }
+    }
 }
 
 void framebuffer_fill_rect(int x, int y, int w, int h, uint16_t color) {

@@ -5,6 +5,11 @@
 #include "hardware/spi.h"
 #include "system_config.h"
 
+typedef enum {
+    PIXEL_FORMAT_RGB565 = 0x55,
+    PIXEL_FORMAT_RGB444 = 0x53
+} display_pixel_format_t;
+
 typedef struct {
     spi_inst_t *spi;
     uint8_t pin_cs;
@@ -16,6 +21,7 @@ typedef struct {
     uint8_t pin_bl;
     uint16_t width;
     uint16_t height;
+    display_pixel_format_t format;
 } display_config_t;
 
 // Initialize display hardware (uses system_config for SPI speeds)

@@ -24,15 +24,16 @@ int main() {
         .pin_dc = 21,
         .pin_bl = 22,
         .width = 320,
-        .height = 240
+        .height = 240,
+        .format = PIXEL_FORMAT_RGB444 // Toggle here for RGB565 or RGB444
     };
     display_init(&disp_cfg, &sys_cfg);
     
     // Initialize DMA for framebuffer transfers
     dma_spi_init(display_get_spi());
     
-    // Initialize framebuffer
-    if (!framebuffer_init(320, 240)) {
+    // Initialize framebuffer with chosen format
+    if (!framebuffer_init(320, 240, disp_cfg.format)) {
         printf("ERROR: Failed to allocate framebuffer\n");
         return -1;
     }

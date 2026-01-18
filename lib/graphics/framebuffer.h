@@ -4,8 +4,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-// Initialize framebuffer (allocates memory)
-bool framebuffer_init(uint16_t width, uint16_t height);
+#include "display_driver.h"
+
+// Initialize framebuffer
+bool framebuffer_init(uint16_t width, uint16_t height, display_pixel_format_t format);
 
 // Get framebuffer info
 uint8_t* framebuffer_get_buffer(void);

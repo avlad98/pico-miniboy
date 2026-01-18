@@ -49,7 +49,7 @@ void display_init(const display_config_t *config, const system_config_t *sys_con
     display_data(0x68);
     
     display_cmd(0x3A); // Pixel Format
-    display_data(0x55); // 16-bit RGB565
+    display_data(config->format);
     
     display_cmd(0x29); // Display ON
     
