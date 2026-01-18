@@ -1,5 +1,11 @@
 #include "display_driver.h"
 #include "hardware/gpio.h"
+#include "hardware/pio.h"
+#include "spi.pio.h"
+
+static PIO pio_instance = pio0;
+static uint sm_instance = 0;
+static uint pio_offset = 0;
 
 static display_config_t current_display;
 
@@ -20,17 +26,20 @@ void display_init(const display_config_t *config, const system_config_t *sys_con
     gpio_init(config->pin_bl);
     gpio_set_dir(config->pin_bl, GPIO_OUT);
     
-    // Init SPI at slow speed for display init
-    spi_init(config->spi, sys_config->spi_hz_init);
-    gpio_set_function(config->pin_sck, GPIO_FUNC_SPI);
-    gpio_set_function(config->pin_mosi, GPIO_FUNC_SPI);
-    gpio_set_function(config->pin_miso, GPIO_FUNC_SPI);
+    // Initialize PIO for SPI
+    pio_offset = pio_add_program(pio_instance, &spi_tx_program);
+    
+    // SPI clock in PIO 2-cycle loop is SysClk / (div * 2)
+    float div_init = (float)system_get_cpu_hz() / (sys_config->spi_hz_init * 2);
+    spi_tx_init(pio_instance, sm_instance, pio_offset, config->pin_sck, config->pin_mosi, div_init);
     
     // Improve signal integrity for high-speed SPI
     gpio_set_drive_strength(config->pin_sck, GPIO_DRIVE_STRENGTH_12MA);
     gpio_set_slew_rate(config->pin_sck, GPIO_SLEW_RATE_FAST);
     gpio_set_drive_strength(config->pin_mosi, GPIO_DRIVE_STRENGTH_12MA);
     gpio_set_slew_rate(config->pin_mosi, GPIO_SLEW_RATE_FAST);
+    gpio_set_drive_strength(config->pin_cs, GPIO_DRIVE_STRENGTH_12MA);
+    gpio_set_slew_rate(config->pin_cs, GPIO_SLEW_RATE_FAST);
     
     // Hardware reset
     gpio_put(config->pin_rst, 0);
@@ -53,9 +62,10 @@ void display_init(const display_config_t *config, const system_config_t *sys_con
     
     display_cmd(0x29); // Display ON
     
-    // Speed up SPI for framebuffer transfers
-    uint32_t actual = spi_set_baudrate(config->spi, sys_config->spi_hz_fast);
-    system_set_actual_spi_hz(actual);
+    // Speed up PIO for framebuffer transfers
+    float div_fast = (float)system_get_cpu_hz() / (sys_config->spi_hz_fast * 2);
+    pio_sm_set_clkdiv(pio_instance, sm_instance, div_fast);
+    system_set_actual_spi_hz(sys_config->spi_hz_fast);
     
     // Backlight on
     gpio_put(config->pin_bl, 1);
@@ -64,14 +74,26 @@ void display_init(const display_config_t *config, const system_config_t *sys_con
 void display_cmd(uint8_t cmd) {
     gpio_put(current_display.pin_dc, 0);
     gpio_put(current_display.pin_cs, 0);
-    spi_write_blocking(current_display.spi, &cmd, 1);
+    
+    // Write 8 bits to the MSB of the 32-bit FIFO for correct alignment
+    *((io_rw_8 *)&pio_instance->txf[sm_instance] + 3) = cmd;
+    
+    while (!pio_sm_is_tx_fifo_empty(pio_instance, sm_instance));
+    // 2-cycle loop at 10Mhz needs ~200 NOPs for safety
+    for (int i = 0; i < 200; i++) __asm volatile ("nop");
+    
     gpio_put(current_display.pin_cs, 1);
 }
 
 void display_data(uint8_t data) {
     gpio_put(current_display.pin_dc, 1);
     gpio_put(current_display.pin_cs, 0);
-    spi_write_blocking(current_display.spi, &data, 1);
+    
+    *((io_rw_8 *)&pio_instance->txf[sm_instance] + 3) = data;
+    
+    while (!pio_sm_is_tx_fifo_empty(pio_instance, sm_instance));
+    for (int i = 0; i < 200; i++) __asm volatile ("nop");
+    
     gpio_put(current_display.pin_cs, 1);
 }
 

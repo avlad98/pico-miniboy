@@ -25,7 +25,7 @@ int main() {
         .pin_bl = 22,
         .width = 320,
         .height = 240,
-        .format = PIXEL_FORMAT_RGB444 // Toggle here for RGB565 or RGB444
+        .format = PIXEL_FORMAT_RGB444 // 12-bit: ~97 FPS, 4096 colors
     };
     display_init(&disp_cfg, &sys_cfg);
     

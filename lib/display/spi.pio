@@ -1,0 +1,36 @@
+.program spi_tx
+.side_set 1
+
+; Ultra-fast 2-cycle gapless SPI TX with IRQ Sync
+; Clock frequency = clk_sys / (clkdiv * 2)
+; Expects autopull ENABLED (8 bits), Shift Left (MSB first)
+
+public entry_point:
+    out pins, 1             side 0 ; Shift 1 bit out, clock low
+    jmp entry_point         side 1 ; Clock high, loop forever
+
+% c-sdk {
+#include "hardware/pio.h"
+
+static inline void spi_tx_init(PIO pio, uint sm, uint offset, uint clk_pin, uint mosi_pin, float div) {
+    pio_sm_config c = spi_tx_program_get_default_config(offset);
+
+    sm_config_set_sideset_pins(&c, clk_pin);
+    sm_config_set_out_pins(&c, mosi_pin, 1);
+    
+    pio_sm_set_consecutive_pindirs(pio, sm, clk_pin, 1, true);
+    pio_sm_set_consecutive_pindirs(pio, sm, mosi_pin, 1, true);
+
+    pio_gpio_init(pio, clk_pin);
+    pio_gpio_init(pio, mosi_pin);
+
+    // Shift Left (MSB first), Autopull ENABLED at 8 bits
+    sm_config_set_out_shift(&c, false, true, 8);
+    
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+    sm_config_set_clkdiv(&c, div);
+
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}

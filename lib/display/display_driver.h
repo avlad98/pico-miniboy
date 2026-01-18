@@ -6,8 +6,9 @@
 #include "system_config.h"
 
 typedef enum {
-    PIXEL_FORMAT_RGB565 = 0x55,
-    PIXEL_FORMAT_RGB444 = 0x53
+    PIXEL_FORMAT_RGB565 = 0x55,  // 16-bit: 65,536 colors
+    PIXEL_FORMAT_RGB444 = 0x53,  // 12-bit: 4,096 colors
+    PIXEL_FORMAT_RGB332 = 0x52   // 8-bit: 256 colors
 } display_pixel_format_t;
 
 typedef struct {

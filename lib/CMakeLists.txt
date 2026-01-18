@@ -18,6 +18,7 @@ add_library(display STATIC
     display/display_driver.c
     display/dma_spi.c
 )
+pico_generate_pio_header(display ${CMAKE_CURRENT_LIST_DIR}/display/spi.pio)
 target_include_directories(display PUBLIC
     display
 )
@@ -26,6 +27,7 @@ target_link_libraries(display PUBLIC
     hardware_spi
     hardware_dma
     hardware_gpio
+    hardware_pio
     system_config
 )
 

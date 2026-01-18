@@ -1,0 +1,65 @@
+.program spi_rgb332_tx
+.side_set 1
+
+; RGB332 to RGB565 color expansion SPI TX
+; Reads 1 byte (RGB332), expands to 2 bytes (RGB565), sends via SPI
+; Input format: RRRGGGBB (8 bits)
+; Output format: RRRRRGGGGGGBBBBB (16 bits)
+
+public entry_point:
+    pull block              side 0      ; Wait for RGB332 byte
+    out null, 24            side 0      ; Discard top 24 bits
+    
+    ; Extract RGB332 components
+    out x, 3                side 0      ; R3 (3 bits red)
+    out y, 3                side 0      ; G3 (3 bits green)
+    out isr, 2              side 0      ; B2 (2 bits blue)
+    
+    ; Expand R3 to R5: Shift left 2, OR with top 2 bits
+    in x, 3                 side 0      ; ISR = R3
+    in x, 2                 side 0      ; ISR = R3:R2 (5 bits)
+    
+    ; Expand G3 to G6: Shift left 3, OR with top 3 bits
+    in y, 3                 side 0      ; ISR = R5:G3
+    in y, 3                 side 0      ; ISR = R5:G6
+    
+    ; Expand B2 to B5: Shift left 3, OR with top 3 bits
+    mov x, isr              side 0      ; Get B2
+    in x, 2                 side 0      ; ISR = R5:G6:B2
+    in x, 2                 side 0      ; ISR = R5:G6:B4
+    in x, 1                 side 0      ; ISR = R5:G6:B5
+    
+    ; Now ISR contains RGB565 (16 bits)
+    ; Send it MSB first over SPI
+    set x, 15               side 0      ; 16 bits to send
+bitloop:
+    out pins, 1             side 0 [1]  ; Data out, clock low
+    jmp x-- bitloop         side 1 [1]  ; Clock high, loop
+
+% c-sdk {
+#include "hardware/pio.h"
+
+static inline void spi_rgb332_tx_init(PIO pio, uint sm, uint offset, uint clk_pin, uint mosi_pin, float div) {
+    pio_sm_config c = spi_rgb332_tx_program_get_default_config(offset);
+
+    sm_config_set_sideset_pins(&c, clk_pin);
+    sm_config_set_out_pins(&c, mosi_pin, 1);
+    sm_config_set_in_pins(&c, mosi_pin);
+    
+    pio_sm_set_consecutive_pindirs(pio, sm, clk_pin, 1, true);
+    pio_sm_set_consecutive_pindirs(pio, sm, mosi_pin, 1, true);
+
+    pio_gpio_init(pio, clk_pin);
+    pio_gpio_init(pio, mosi_pin);
+
+    // Shift left (MSB first), no autopull/autopush
+    sm_config_set_out_shift(&c, false, false, 32);
+    sm_config_set_in_shift(&c, false, false, 32);
+    
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+    sm_config_set_clkdiv(&c, div);
+
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}

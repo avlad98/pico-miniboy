@@ -6,6 +6,9 @@ static uint32_t actual_spi_hz = 0;
 
 void system_init(const system_config_t *config) {
     // Set voltage for stability at higher clocks
+    if (config->cpu_mhz >= 200) {
+        vreg_set_voltage(VREG_VOLTAGE_1_20);
+    }
     if (config->cpu_mhz >= 250) {
         vreg_set_voltage(VREG_VOLTAGE_1_25);
     }

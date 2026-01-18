@@ -5,6 +5,7 @@
 #include <stdlib.h>
 
 static uint8_t *framebuffer_v[2] = {NULL, NULL};
+static uint8_t *expansion_buffer = NULL;  // For RGB332→RGB565 conversion
 static uint8_t back_buffer_idx = 0;
 static uint16_t fb_width = 0;
 static uint16_t fb_height = 0;
@@ -19,16 +20,21 @@ bool framebuffer_init(uint16_t width, uint16_t height, display_pixel_format_t fo
     
     if (format == PIXEL_FORMAT_RGB565) {
         fb_size = width * height * 2;
-    } else {
+    } else if (format == PIXEL_FORMAT_RGB444) {
         fb_size = (width * height * 3) / 2;
+    } else {  // RGB332
+        fb_size = width * height;  // 1 byte per pixel in framebuffer
+        // Allocate expansion buffer for RGB565 output
+        expansion_buffer = (uint8_t*)malloc(width * height * 2);
+        if (expansion_buffer == NULL) return false;
     }
     
     framebuffer_v[0] = (uint8_t*)malloc(fb_size);
-    // Only double-buffer if we have enough RAM (RGB444 mode)
-    if (format == PIXEL_FORMAT_RGB444) {
+    // Double-buffer for RGB444 and RGB332
+    if (format == PIXEL_FORMAT_RGB444 || format == PIXEL_FORMAT_RGB332) {
         framebuffer_v[1] = (uint8_t*)malloc(fb_size);
     } else {
-        framebuffer_v[1] = framebuffer_v[0]; // Point to same for 565
+        framebuffer_v[1] = framebuffer_v[0];
     }
 
     if (framebuffer_v[0] == NULL || framebuffer_v[1] == NULL) {
@@ -54,18 +60,15 @@ void framebuffer_clear(uint16_t color) {
         uint32_t *ptr32 = (uint32_t*)framebuffer;
         uint32_t *end32 = (uint32_t*)(framebuffer + fb_size);
         while (ptr32 < end32) *ptr32++ = color32;
-    } else {
+    } else if (fb_format == PIXEL_FORMAT_RGB444) {
         uint8_t r4 = ((color >> 11) & 0x1F) >> 1;
         uint8_t g4 = ((color >> 5) & 0x3F) >> 2;
         uint8_t b4 = (color & 0x1F) >> 1;
         
-        // 3 bytes for 2 pixels: [R1 G1] [B1 R2] [G2 B2]
         uint8_t b0 = (r4 << 4) | g4;
         uint8_t b1 = (b4 << 4) | r4;
         uint8_t b2 = (g4 << 4) | b4;
         
-        // Optimize using 32-bit writes. Pattern repeats every 12 bytes (3 words)
-        // [b0 b1 b2 b0] [b1 b2 b0 b1] [b2 b0 b1 b2]
         uint32_t w0 = b0 | (b1 << 8) | (b2 << 16) | (b0 << 24);
         uint32_t w1 = b1 | (b2 << 8) | (b0 << 16) | (b1 << 24);
         uint32_t w2 = b2 | (b0 << 8) | (b1 << 16) | (b2 << 24);
@@ -78,6 +81,18 @@ void framebuffer_clear(uint16_t color) {
             *ptr32++ = w1;
             *ptr32++ = w2;
         }
+    } else {  // RGB332
+        // Convert RGB565 to RGB332: RRRGGGBB
+        uint8_t r3 = (color >> 13) & 0x07;  // Top 3 bits of 5-bit red
+        uint8_t g3 = (color >> 8) & 0x07;   // Top 3 bits of 6-bit green
+        uint8_t b2 = (color >> 3) & 0x03;   // Top 2 bits of 5-bit blue
+        uint8_t color8 = (r3 << 5) | (g3 << 2) | b2;
+        
+        // Use 32-bit writes for speed
+        uint32_t color32 = color8 | (color8 << 8) | (color8 << 16) | (color8 << 24);
+        uint32_t *ptr32 = (uint32_t*)framebuffer;
+        uint32_t *end32 = (uint32_t*)(framebuffer + fb_size);
+        while (ptr32 < end32) *ptr32++ = color32;
     }
 }
 
@@ -88,8 +103,7 @@ void framebuffer_set_pixel(int x, int y, uint16_t color) {
         int idx = (y * fb_width + x) * 2;
         framebuffer[idx] = color >> 8;
         framebuffer[idx + 1] = color & 0xFF;
-    } else {
-        // RGB444: 3 bytes for 2 pixels
+    } else if (fb_format == PIXEL_FORMAT_RGB444) {
         int pixel_idx = y * fb_width + x;
         int byte_idx = (pixel_idx / 2) * 3;
         
@@ -98,14 +112,18 @@ void framebuffer_set_pixel(int x, int y, uint16_t color) {
         uint8_t b4 = (color & 0x1F) >> 1;
         
         if (pixel_idx % 2 == 0) {
-            // Even pixel: [R1 G1] [B1 ..]
             framebuffer[byte_idx] = (r4 << 4) | g4;
             framebuffer[byte_idx+1] = (b4 << 4) | (framebuffer[byte_idx+1] & 0x0F);
         } else {
-            // Odd pixel: [.. ..] [.. R2] [G2 B2]
             framebuffer[byte_idx+1] = (framebuffer[byte_idx+1] & 0xF0) | r4;
             framebuffer[byte_idx+2] = (g4 << 4) | b4;
         }
+    } else {  // RGB332
+        int idx = y * fb_width + x;
+        uint8_t r3 = (color >> 13) & 0x07;
+        uint8_t g3 = (color >> 8) & 0x07;
+        uint8_t b2 = (color >> 3) & 0x03;
+        framebuffer[idx] = (r3 << 5) | (g3 << 2) | b2;
     }
 }
 
@@ -172,19 +190,47 @@ void framebuffer_swap(void) {
 }
 
 void framebuffer_swap_async(void) {
-    // Current framebuffer (back buffer) is now ready to be sent
     uint8_t *prev_buffer = framebuffer_v[back_buffer_idx];
+    uint8_t *send_buffer = prev_buffer;
+    uint32_t send_size = fb_size;
+    
+    // If RGB332, expand to RGB565 in the expansion buffer
+    if (fb_format == PIXEL_FORMAT_RGB332) {
+        uint8_t *src = prev_buffer;
+        uint8_t *dst = expansion_buffer;
+        uint32_t pixels = fb_width * fb_height;
+        
+        for (uint32_t i = 0; i < pixels; i++) {
+            uint8_t rgb332 = *src++;
+            
+            uint8_t r3 = (rgb332 >> 5) & 0x07;
+            uint8_t g3 = (rgb332 >> 2) & 0x07;
+            uint8_t b2 = rgb332 & 0x03;
+            
+            uint16_t r5 = (r3 << 2) | (r3 >> 1);
+            uint16_t g6 = (g3 << 3) | g3;
+            uint16_t b5 = (b2 << 3) | (b2 << 1) | (b2 >> 1);
+            
+            uint16_t rgb565 = (r5 << 11) | (g6 << 5) | b5;
+            
+            // Write in big-endian order (high byte first) for PIO
+            *dst++ = rgb565 >> 8;    // High byte
+            *dst++ = rgb565 & 0xFF;  // Low byte
+        }
+        
+        send_buffer = expansion_buffer;
+        send_size = fb_width * fb_height * 2;
+    }
     
     // Toggle buffer index for the NEXT frame
-    if (fb_format == PIXEL_FORMAT_RGB444) {
+    if (fb_format == PIXEL_FORMAT_RGB444 || fb_format == PIXEL_FORMAT_RGB332) {
         back_buffer_idx = 1 - back_buffer_idx;
-        // Wait for previous DMA to finish before starting new one
         framebuffer_wait_last_swap();
     }
     
     display_set_window(0, 0, fb_width - 1, fb_height - 1);
     display_start_write();
-    dma_spi_transfer(prev_buffer, fb_size);
+    dma_spi_transfer(send_buffer, send_size);
     dma_active = true;
 }
 
