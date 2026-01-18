@@ -60,10 +60,6 @@ int main() {
     while (1) {
         uint32_t t0 = time_us_32();
         
-        // IMPORTANT: Wait for the previous frame to finish sending 
-        // to the display before we touch the framebuffer memory.
-        framebuffer_wait_last_swap();
-        
         // Clear screen (Red background for BGR displays)
         framebuffer_clear(0x0010);
         uint32_t t1 = time_us_32();
