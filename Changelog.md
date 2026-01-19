@@ -1,10 +1,11 @@
 # Changelog - Pico-MiniBoy
 
 ## Current State
-- **Performance**: 103 FPS rock-solid stable.
+- **Performance**: 103 FPS stable (Single-core RGB444).
 - **Hardware**: RP2040 (Pico) + 2.8" ILI9341 TFT SPI.
-- **Clock**: 190MHz CPU, 95MHz SPI (Stable PIO 2-cycle).
-- **Driver**: Custom PIO-based gapless SPI with DMA + Atomic Command Throttling + 1.3V VREG boost.
+- **Clock**: 190MHz CPU, 95MHz SPI (PERFORMANCE_HIGH).
+- **Driver**: **Zero-Wait Architecture** - PIO FDEBUG/TXSTALL hardware sync replaces all CPU-wasteful NOP loops. 
+- **Stability**: Resolved all command truncation and mirroring issues via precise 10MHz command throtling.
 - **Color Modes**:
     - RGB565 (16-bit): Full color.
     - RGB444 (12-bit): 4096 colors, 1.5 bytes/pixel (Optimized block-filling).
@@ -78,6 +79,7 @@
 - **High-Priority DMA**: Elevated display DMA priority to eliminate bus-starvation jitter.
 - **Fast Word-Aligned Fills**: Rewrote RGB444 rectangle clearing to use 32-bit block writes.
 - **Signal Integrity Barriers**: Added precision NOP delays to ensure signal settlement on the bus.
+- **Zero-Wait Hardware Sync**: Replaced NOP delays with PIO FDEBUG/TXSTALL monitoring for gapless performance.
 - **Result**: Surpassed previous 98 FPS record with better visual stability and no artifacts.
 
 ---
@@ -88,7 +90,8 @@
 - [x] **Optimize RGB444 Filling**: Implemented fast-path 32-bit block writes for aligned rectangles.
 - [x] **Optimize RGB332 Expansion**: Integrated LUT for zero-latency expansion.
 - [x] **Command Throttling**: Implemented dynamic SPI frequency switching for stability.
-- [ ] **DMA-Accelerated Clearing**: Use secondary DMA channel for background framebuffer clearing.
+- [x] **Zero-Wait Sync**: Implemented hardware-level PIO synchronization.
+- [ ] **Multicore Rendering**: Offload drawing to Core 1 (In development).
 - [ ] **120FPS+ Hardware Validation**: Debug EXTREME profile on shorter signal paths.
 
 ### Feature Parity & Stability

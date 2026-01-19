@@ -18,6 +18,7 @@ void framebuffer_clear(uint16_t color);
 void framebuffer_set_pixel(int x, int y, uint16_t color);
 void framebuffer_fill_rect(int x, int y, int w, int h, uint16_t color);
 void framebuffer_fill_circle(int cx, int cy, int radius, uint16_t color);
+void framebuffer_wait_clear(void);
 
 // Send framebuffer to display (blocking)
 void framebuffer_swap(void);

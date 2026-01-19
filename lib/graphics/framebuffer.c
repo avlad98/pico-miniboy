@@ -1,6 +1,7 @@
 #include "framebuffer.h"
 #include "display_driver.h"
 #include "dma_spi.h"
+#include "dma_mem.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -13,6 +14,7 @@ static uint32_t fb_size = 0;
 static display_pixel_format_t fb_format;
 static uint16_t rgb332_to_rgb565[256];
 static bool lut_initialized = false;
+static bool dma_active = false;
 #define framebuffer framebuffer_v[back_buffer_idx]
 
 bool framebuffer_init(uint16_t width, uint16_t height, display_pixel_format_t format) {
@@ -25,14 +27,12 @@ bool framebuffer_init(uint16_t width, uint16_t height, display_pixel_format_t fo
     } else if (format == PIXEL_FORMAT_RGB444) {
         fb_size = (width * height * 3) / 2;
     } else {  // RGB332
-        fb_size = width * height;  // 1 byte per pixel in framebuffer
-        // Allocate expansion buffer for RGB565 output
+        fb_size = width * height;
         expansion_buffer = (uint8_t*)malloc(width * height * 2);
         if (expansion_buffer == NULL) return false;
     }
     
     framebuffer_v[0] = (uint8_t*)malloc(fb_size);
-    // Double-buffer for RGB444 and RGB332
     if (format == PIXEL_FORMAT_RGB444 || format == PIXEL_FORMAT_RGB332) {
         framebuffer_v[1] = (uint8_t*)malloc(fb_size);
     } else {
@@ -43,7 +43,6 @@ bool framebuffer_init(uint16_t width, uint16_t height, display_pixel_format_t fo
         return false;
     }
 
-    // Zero-initialize both buffers to prevent "nibble noise" in RGB444
     memset(framebuffer_v[0], 0, fb_size);
     memset(framebuffer_v[1], 0, fb_size);
     
@@ -56,68 +55,61 @@ bool framebuffer_init(uint16_t width, uint16_t height, display_pixel_format_t fo
             uint16_t g6 = (g3 << 3) | g3;
             uint16_t b5 = (b2 << 3) | (b2 << 1) | (b2 >> 1);
             uint16_t rgb565 = (r5 << 11) | (g6 << 5) | b5;
-            // Store as big-endian for PIO
             rgb332_to_rgb565[i] = (rgb565 >> 8) | ((rgb565 & 0xFF) << 8);
         }
         lut_initialized = true;
     }
     
+    dma_mem_init();
+    
     return true;
 }
 
-uint8_t* framebuffer_get_buffer(void) {
-    return framebuffer;
-}
-
-uint32_t framebuffer_get_size(void) {
-    return fb_size;
-}
-
 void framebuffer_clear(uint16_t color) {
+    framebuffer_wait_clear();
+    uint32_t count = fb_size / 4; 
+
     if (fb_format == PIXEL_FORMAT_RGB565) {
         uint8_t hi = color >> 8;
         uint8_t lo = color & 0xFF;
         uint32_t color32 = (lo << 24) | (hi << 16) | (lo << 8) | hi;
-        uint32_t *ptr32 = (uint32_t*)framebuffer;
-        uint32_t *end32 = (uint32_t*)(framebuffer + fb_size);
-        while (ptr32 < end32) *ptr32++ = color32;
+        dma_mem_fill32((uint32_t*)framebuffer, color32, count);
     } else if (fb_format == PIXEL_FORMAT_RGB444) {
+        if (color == 0) {
+            dma_mem_fill32((uint32_t*)framebuffer, 0, count);
+            return;
+        }
         uint8_t r4 = ((color >> 11) & 0x1F) >> 1;
         uint8_t g4 = ((color >> 5) & 0x3F) >> 2;
         uint8_t b4 = (color & 0x1F) >> 1;
-        
         uint8_t b0 = (r4 << 4) | g4;
         uint8_t b1 = (b4 << 4) | r4;
         uint8_t b2 = (g4 << 4) | b4;
-        
         uint32_t w0 = b0 | (b1 << 8) | (b2 << 16) | (b0 << 24);
         uint32_t w1 = b1 | (b2 << 8) | (b0 << 16) | (b1 << 24);
         uint32_t w2 = b2 | (b0 << 8) | (b1 << 16) | (b2 << 24);
-        
         uint32_t *ptr32 = (uint32_t*)framebuffer;
         uint32_t *end32 = (uint32_t*)(framebuffer + fb_size);
-        
         while (ptr32 < end32) {
-            *ptr32++ = w0;
-            *ptr32++ = w1;
-            *ptr32++ = w2;
+            *ptr32++ = w0; *ptr32++ = w1; *ptr32++ = w2;
         }
-    } else {  // RGB332
-        // Convert RGB565 to RGB332: RRRGGGBB
-        uint8_t r3 = (color >> 13) & 0x07;  // Top 3 bits of 5-bit red
-        uint8_t g3 = (color >> 8) & 0x07;   // Top 3 bits of 6-bit green
-        uint8_t b2 = (color >> 3) & 0x03;   // Top 2 bits of 5-bit blue
+        return;
+    } else { // RGB332
+        uint8_t r3 = (color >> 13) & 0x07;
+        uint8_t g3 = (color >> 8) & 0x07;
+        uint8_t b2 = (color >> 3) & 0x03;
         uint8_t color8 = (r3 << 5) | (g3 << 2) | b2;
-        
-        // Use 32-bit writes for speed
         uint32_t color32 = color8 | (color8 << 8) | (color8 << 16) | (color8 << 24);
-        uint32_t *ptr32 = (uint32_t*)framebuffer;
-        uint32_t *end32 = (uint32_t*)(framebuffer + fb_size);
-        while (ptr32 < end32) *ptr32++ = color32;
+        dma_mem_fill32((uint32_t*)framebuffer, color32, count);
     }
 }
 
+void framebuffer_wait_clear(void) {
+    dma_mem_wait();
+}
+
 void framebuffer_set_pixel(int x, int y, uint16_t color) {
+    framebuffer_wait_clear();
     if (x < 0 || x >= fb_width || y < 0 || y >= fb_height) return;
     
     if (fb_format == PIXEL_FORMAT_RGB565) {
@@ -127,21 +119,18 @@ void framebuffer_set_pixel(int x, int y, uint16_t color) {
     } else if (fb_format == PIXEL_FORMAT_RGB444) {
         int pixel_idx = y * fb_width + x;
         int byte_idx = (pixel_idx / 2) * 3;
-        
         uint8_t r4 = ((color >> 11) & 0x1F) >> 1;
         uint8_t g4 = ((color >> 5) & 0x3F) >> 2;
         uint8_t b4 = (color & 0x1F) >> 1;
         
         if (pixel_idx % 2 == 0) {
             framebuffer[byte_idx] = (r4 << 4) | g4;
-            // Use bitwise mask to preserve bottom nibble (R of Pixel 2)
             framebuffer[byte_idx+1] = (b4 << 4) | (framebuffer[byte_idx+1] & 0x0F);
         } else {
-            // Use bitwise mask to preserve top nibble (B of Pixel 1)
             framebuffer[byte_idx+1] = (framebuffer[byte_idx+1] & 0xF0) | r4;
             framebuffer[byte_idx+2] = (g4 << 4) | b4;
         }
-    } else {  // RGB332
+    } else { // RGB332
         int idx = y * fb_width + x;
         uint8_t r3 = (color >> 13) & 0x07;
         uint8_t g3 = (color >> 8) & 0x07;
@@ -151,40 +140,20 @@ void framebuffer_set_pixel(int x, int y, uint16_t color) {
 }
 
 void framebuffer_fill_rect(int x, int y, int w, int h, uint16_t color) {
+    framebuffer_wait_clear();
     if (x < 0) { w += x; x = 0; }
     if (y < 0) { h += y; y = 0; }
     if (x + w > fb_width) w = fb_width - x;
     if (y + h > fb_height) h = fb_height - y;
     if (w <= 0 || h <= 0) return;
 
-    if (fb_format == PIXEL_FORMAT_RGB565) {
-        uint8_t hi = color >> 8;
-        uint8_t lo = color & 0xFF;
-        for (int row = 0; row < h; row++) {
-            uint8_t *ptr = &framebuffer[((y + row) * fb_width + x) * 2];
-            for (int col = 0; col < w; col++) {
-                *ptr++ = hi;
-                *ptr++ = lo;
-            }
-        }
-    } else if (fb_format == PIXEL_FORMAT_RGB332) {
-        uint8_t r3 = (color >> 13) & 0x07;
-        uint8_t g3 = (color >> 8) & 0x07;
-        uint8_t b2 = (color >> 3) & 0x03;
-        uint8_t color8 = (r3 << 5) | (g3 << 2) | b2;
-        for (int row = 0; row < h; row++) {
-            memset(&framebuffer[(y + row) * fb_width + x], color8, w);
-        }
-    } else if (fb_format == PIXEL_FORMAT_RGB444) {
+    if (fb_format == PIXEL_FORMAT_RGB444) {
         uint8_t r4 = ((color >> 11) & 0x1F) >> 1;
         uint8_t g4 = ((color >> 5) & 0x3F) >> 2;
         uint8_t b4 = (color & 0x1F) >> 1;
-        
         uint8_t b0 = (r4 << 4) | g4;
         uint8_t b1 = (b4 << 4) | r4;
         uint8_t b2 = (g4 << 4) | b4;
-
-        // Pre-calculate 32-bit words for fast filling
         uint32_t w0 = b0 | (b1 << 8) | (b2 << 16) | (b0 << 24);
         uint32_t w1 = b1 | (b2 << 8) | (b0 << 16) | (b1 << 24);
         uint32_t w2 = b2 | (b0 << 8) | (b1 << 16) | (b2 << 24);
@@ -192,30 +161,20 @@ void framebuffer_fill_rect(int x, int y, int w, int h, uint16_t color) {
         for (int row = 0; row < h; row++) {
             int py = y + row;
             int start_pixel = py * fb_width + x;
-            int end_pixel = start_pixel + w;
-            
-            // For simple implementation, if not aligned to 8-pixel boundary, 
-            // use slow path. If aligned, use fast path.
             if ((start_pixel % 8 == 0) && (w % 8 == 0)) {
                 uint32_t *ptr32 = (uint32_t*)&framebuffer[(start_pixel / 2) * 3];
                 int words = (w / 8) * 3;
                 for (int i = 0; i < words; i += 3) {
-                    ptr32[i] = w0;
-                    ptr32[i+1] = w1;
-                    ptr32[i+2] = w2;
+                    ptr32[i] = w0; ptr32[i+1] = w1; ptr32[i+2] = w2;
                 }
             } else {
-                for (int px = x; px < x + w; px++) {
-                    int pixel_idx = py * fb_width + px;
-                    int byte_idx = (pixel_idx / 2) * 3;
-                    if (pixel_idx % 2 == 0) {
-                        framebuffer[byte_idx] = b0;
-                        framebuffer[byte_idx+1] = (b4 << 4) | (framebuffer[byte_idx+1] & 0x0F);
-                    } else {
-                        framebuffer[byte_idx+1] = (framebuffer[byte_idx+1] & 0xF0) | r4;
-                        framebuffer[byte_idx+2] = b2;
-                    }
-                }
+                for (int px = x; px < x + w; px++) framebuffer_set_pixel(px, py, color);
+            }
+        }
+    } else {
+        for (int row = 0; row < h; row++) {
+            for (int col = 0; col < w; col++) {
+                framebuffer_set_pixel(x + col, y + row, color);
             }
         }
     }
@@ -225,18 +184,11 @@ void framebuffer_fill_circle(int cx, int cy, int radius, uint16_t color) {
     int x = radius;
     int y = 0;
     int err = 0;
-
     while (x >= y) {
-        // Draw horizontal lines to fill the circle
-        for (int i = cx - x; i <= cx + x; i++) {
-            framebuffer_set_pixel(i, cy + y, color);
-            framebuffer_set_pixel(i, cy - y, color);
-        }
-        for (int i = cx - y; i <= cx + y; i++) {
-            framebuffer_set_pixel(i, cy + x, color);
-            framebuffer_set_pixel(i, cy - x, color);
-        }
-
+        framebuffer_fill_rect(cx - x, cy + y, 2 * x + 1, 1, color);
+        framebuffer_fill_rect(cx - x, cy - y, 2 * x + 1, 1, color);
+        framebuffer_fill_rect(cx - y, cy + x, 2 * y + 1, 1, color);
+        framebuffer_fill_rect(cx - y, cy - x, 2 * y + 1, 1, color);
         y++;
         err += 1 + 2 * y;
         if (2 * (err - x) + 1 > 0) {
@@ -246,35 +198,20 @@ void framebuffer_fill_circle(int cx, int cy, int radius, uint16_t color) {
     }
 }
 
-static bool dma_active = false;
-
-void framebuffer_swap(void) {
-    framebuffer_swap_async();
-    dma_spi_wait();
-    display_end_write();
-    dma_active = false;
-}
-
 void framebuffer_swap_async(void) {
-    uint8_t *prev_buffer = framebuffer_v[back_buffer_idx];
-    uint8_t *send_buffer = prev_buffer;
+    framebuffer_wait_clear();
+    uint8_t *send_buffer = framebuffer_v[back_buffer_idx];
     uint32_t send_size = fb_size;
     
-    // If RGB332, expand to RGB565 in the expansion buffer
     if (fb_format == PIXEL_FORMAT_RGB332) {
-        uint8_t *src = prev_buffer;
         uint16_t *dst = (uint16_t*)expansion_buffer;
-        uint32_t pixels = fb_width * fb_height;
-        
-        for (uint32_t i = 0; i < pixels; i++) {
-            *dst++ = rgb332_to_rgb565[*src++];
+        for (uint32_t i = 0; i < fb_width * fb_height; i++) {
+            dst[i] = rgb332_to_rgb565[send_buffer[i]];
         }
-        
         send_buffer = expansion_buffer;
         send_size = fb_width * fb_height * 2;
     }
     
-    // Toggle buffer index for the NEXT frame
     if (fb_format == PIXEL_FORMAT_RGB444 || fb_format == PIXEL_FORMAT_RGB332) {
         back_buffer_idx = 1 - back_buffer_idx;
         framebuffer_wait_last_swap();
@@ -282,10 +219,6 @@ void framebuffer_swap_async(void) {
     
     display_set_window(0, 0, fb_width - 1, fb_height - 1);
     display_start_write();
-    
-    // Tiny delay to ensure DC/CS signals are settled before DMA hammer starts
-    for (int i = 0; i < 50; i++) __asm volatile ("nop");
-    
     dma_spi_transfer(send_buffer, send_size);
     dma_active = true;
 }
@@ -293,7 +226,6 @@ void framebuffer_swap_async(void) {
 void framebuffer_wait_last_swap(void) {
     if (dma_active) {
         dma_spi_wait();
-        for (int i = 0; i < 100; i++) __asm volatile ("nop");
         display_end_write();
         dma_active = false;
     }
