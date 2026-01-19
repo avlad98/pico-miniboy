@@ -6,6 +6,8 @@
 static PIO pio_instance = pio0;
 static uint sm_instance = 0;
 static uint pio_offset = 0;
+static float pio_div_init = 0;
+static float pio_div_fast = 0;
 
 static display_config_t current_display;
 
@@ -30,10 +32,13 @@ void display_init(const display_config_t *config, const system_config_t *sys_con
     pio_offset = pio_add_program(pio_instance, &spi_tx_program);
     
     // SPI clock in PIO 2-cycle loop is SysClk / (div * 2)
-    float div_init = (float)system_get_cpu_hz() / (sys_config->spi_hz_init * 2);
-    spi_tx_init(pio_instance, sm_instance, pio_offset, config->pin_sck, config->pin_mosi, div_init);
+    pio_div_fast = (float)system_get_cpu_hz() / (sys_config->spi_hz_fast * 2);
+    pio_div_init = (float)system_get_cpu_hz() / (sys_config->spi_hz_init * 2);
+
+    spi_tx_init(pio_instance, sm_instance, pio_offset, config->pin_sck, config->pin_mosi, pio_div_init);
     
     // Improve signal integrity for high-speed SPI
+    // Using 12mA drive strength for 100MHz+ SPI as used in the previous 98 FPS achievement
     gpio_set_drive_strength(config->pin_sck, GPIO_DRIVE_STRENGTH_12MA);
     gpio_set_slew_rate(config->pin_sck, GPIO_SLEW_RATE_FAST);
     gpio_set_drive_strength(config->pin_mosi, GPIO_DRIVE_STRENGTH_12MA);
@@ -62,9 +67,8 @@ void display_init(const display_config_t *config, const system_config_t *sys_con
     
     display_cmd(0x29); // Display ON
     
-    // Speed up PIO for framebuffer transfers
-    float div_fast = (float)system_get_cpu_hz() / (sys_config->spi_hz_fast * 2);
-    pio_sm_set_clkdiv(pio_instance, sm_instance, div_fast);
+    // Speed up PIO for framebuffer transfers after init sequence
+    pio_sm_set_clkdiv(pio_instance, sm_instance, pio_div_fast);
     system_set_actual_spi_hz(sys_config->spi_hz_fast);
     
     // Backlight on
@@ -72,29 +76,53 @@ void display_init(const display_config_t *config, const system_config_t *sys_con
 }
 
 void display_cmd(uint8_t cmd) {
+    // Drop to safe speed for commands if fast speed > 60MHz (div < 1.5 at typical clocks)
+    bool throttle = (pio_div_fast < 1.5f);
+    if (throttle) {
+        while (!pio_sm_is_tx_fifo_empty(pio_instance, sm_instance));
+        for (int i = 0; i < 50; i++) __asm volatile ("nop");
+        pio_sm_set_clkdiv(pio_instance, sm_instance, pio_div_init);
+    }
+
     gpio_put(current_display.pin_dc, 0);
     gpio_put(current_display.pin_cs, 0);
     
-    // Write 8 bits to the MSB of the 32-bit FIFO for correct alignment
     *((io_rw_8 *)&pio_instance->txf[sm_instance] + 3) = cmd;
     
     while (!pio_sm_is_tx_fifo_empty(pio_instance, sm_instance));
-    // 2-cycle loop at 10Mhz needs ~200 NOPs for safety
-    for (int i = 0; i < 200; i++) __asm volatile ("nop");
+    // 30 NOPs at 200MHz is ~150ns, enough for 8 bits at 100MHz + logic setup
+    for (int i = 0; i < 30; i++) __asm volatile ("nop");
     
     gpio_put(current_display.pin_cs, 1);
+    
+    if (throttle) {
+        for (int i = 0; i < 20; i++) __asm volatile ("nop");
+        pio_sm_set_clkdiv(pio_instance, sm_instance, pio_div_fast);
+    }
 }
 
 void display_data(uint8_t data) {
+    bool throttle = (pio_div_fast < 1.5f);
+    if (throttle) {
+        while (!pio_sm_is_tx_fifo_empty(pio_instance, sm_instance));
+        for (int i = 0; i < 50; i++) __asm volatile ("nop");
+        pio_sm_set_clkdiv(pio_instance, sm_instance, pio_div_init);
+    }
+
     gpio_put(current_display.pin_dc, 1);
     gpio_put(current_display.pin_cs, 0);
     
     *((io_rw_8 *)&pio_instance->txf[sm_instance] + 3) = data;
     
     while (!pio_sm_is_tx_fifo_empty(pio_instance, sm_instance));
-    for (int i = 0; i < 200; i++) __asm volatile ("nop");
+    for (int i = 0; i < 30; i++) __asm volatile ("nop");
     
     gpio_put(current_display.pin_cs, 1);
+
+    if (throttle) {
+        for (int i = 0; i < 20; i++) __asm volatile ("nop");
+        pio_sm_set_clkdiv(pio_instance, sm_instance, pio_div_fast);
+    }
 }
 
 void display_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {

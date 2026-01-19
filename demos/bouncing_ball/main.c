@@ -7,8 +7,8 @@
 #include <stdio.h>
 
 int main() {
-    // System configuration - LUDICROUS (266MHz CPU / 133MHz SPI)
-    system_config_t sys_cfg = PERFORMANCE_LUDICROUS; 
+    // System configuration - HIGH (190MHz CPU / 95MHz SPI)
+    system_config_t sys_cfg = PERFORMANCE_HIGH;
     system_init(&sys_cfg);
     
     stdio_init_all();

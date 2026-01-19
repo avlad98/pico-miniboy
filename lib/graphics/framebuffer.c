@@ -11,6 +11,8 @@ static uint16_t fb_width = 0;
 static uint16_t fb_height = 0;
 static uint32_t fb_size = 0;
 static display_pixel_format_t fb_format;
+static uint16_t rgb332_to_rgb565[256];
+static bool lut_initialized = false;
 #define framebuffer framebuffer_v[back_buffer_idx]
 
 bool framebuffer_init(uint16_t width, uint16_t height, display_pixel_format_t format) {
@@ -39,6 +41,25 @@ bool framebuffer_init(uint16_t width, uint16_t height, display_pixel_format_t fo
 
     if (framebuffer_v[0] == NULL || framebuffer_v[1] == NULL) {
         return false;
+    }
+
+    // Zero-initialize both buffers to prevent "nibble noise" in RGB444
+    memset(framebuffer_v[0], 0, fb_size);
+    memset(framebuffer_v[1], 0, fb_size);
+    
+    if (!lut_initialized) {
+        for (int i = 0; i < 256; i++) {
+            uint8_t r3 = (i >> 5) & 0x07;
+            uint8_t g3 = (i >> 2) & 0x07;
+            uint8_t b2 = i & 0x03;
+            uint16_t r5 = (r3 << 2) | (r3 >> 1);
+            uint16_t g6 = (g3 << 3) | g3;
+            uint16_t b5 = (b2 << 3) | (b2 << 1) | (b2 >> 1);
+            uint16_t rgb565 = (r5 << 11) | (g6 << 5) | b5;
+            // Store as big-endian for PIO
+            rgb332_to_rgb565[i] = (rgb565 >> 8) | ((rgb565 & 0xFF) << 8);
+        }
+        lut_initialized = true;
     }
     
     return true;
@@ -113,8 +134,10 @@ void framebuffer_set_pixel(int x, int y, uint16_t color) {
         
         if (pixel_idx % 2 == 0) {
             framebuffer[byte_idx] = (r4 << 4) | g4;
+            // Use bitwise mask to preserve bottom nibble (R of Pixel 2)
             framebuffer[byte_idx+1] = (b4 << 4) | (framebuffer[byte_idx+1] & 0x0F);
         } else {
+            // Use bitwise mask to preserve top nibble (B of Pixel 1)
             framebuffer[byte_idx+1] = (framebuffer[byte_idx+1] & 0xF0) | r4;
             framebuffer[byte_idx+2] = (g4 << 4) | b4;
         }
@@ -128,27 +151,70 @@ void framebuffer_set_pixel(int x, int y, uint16_t color) {
 }
 
 void framebuffer_fill_rect(int x, int y, int w, int h, uint16_t color) {
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > fb_width) w = fb_width - x;
+    if (y + h > fb_height) h = fb_height - y;
+    if (w <= 0 || h <= 0) return;
+
     if (fb_format == PIXEL_FORMAT_RGB565) {
         uint8_t hi = color >> 8;
         uint8_t lo = color & 0xFF;
         for (int row = 0; row < h; row++) {
-            int py = y + row;
-            if (py >= 0 && py < fb_height) {
-                uint8_t *ptr = &framebuffer[(py * fb_width + x) * 2];
-                for (int col = 0; col < w; col++) {
-                    *ptr++ = hi;
-                    *ptr++ = lo;
-                }
+            uint8_t *ptr = &framebuffer[((y + row) * fb_width + x) * 2];
+            for (int col = 0; col < w; col++) {
+                *ptr++ = hi;
+                *ptr++ = lo;
             }
         }
-    } else {
-        // Optimizing 12-bit fill is harder because of alignment, 
-        // but we can optimize the common case where x and w are even.
+    } else if (fb_format == PIXEL_FORMAT_RGB332) {
+        uint8_t r3 = (color >> 13) & 0x07;
+        uint8_t g3 = (color >> 8) & 0x07;
+        uint8_t b2 = (color >> 3) & 0x03;
+        uint8_t color8 = (r3 << 5) | (g3 << 2) | b2;
+        for (int row = 0; row < h; row++) {
+            memset(&framebuffer[(y + row) * fb_width + x], color8, w);
+        }
+    } else if (fb_format == PIXEL_FORMAT_RGB444) {
+        uint8_t r4 = ((color >> 11) & 0x1F) >> 1;
+        uint8_t g4 = ((color >> 5) & 0x3F) >> 2;
+        uint8_t b4 = (color & 0x1F) >> 1;
+        
+        uint8_t b0 = (r4 << 4) | g4;
+        uint8_t b1 = (b4 << 4) | r4;
+        uint8_t b2 = (g4 << 4) | b4;
+
+        // Pre-calculate 32-bit words for fast filling
+        uint32_t w0 = b0 | (b1 << 8) | (b2 << 16) | (b0 << 24);
+        uint32_t w1 = b1 | (b2 << 8) | (b0 << 16) | (b1 << 24);
+        uint32_t w2 = b2 | (b0 << 8) | (b1 << 16) | (b2 << 24);
+
         for (int row = 0; row < h; row++) {
             int py = y + row;
-            if (py >= 0 && py < fb_height) {
-                for (int col = 0; col < w; col++) {
-                    framebuffer_set_pixel(x + col, py, color);
+            int start_pixel = py * fb_width + x;
+            int end_pixel = start_pixel + w;
+            
+            // For simple implementation, if not aligned to 8-pixel boundary, 
+            // use slow path. If aligned, use fast path.
+            if ((start_pixel % 8 == 0) && (w % 8 == 0)) {
+                uint32_t *ptr32 = (uint32_t*)&framebuffer[(start_pixel / 2) * 3];
+                int words = (w / 8) * 3;
+                for (int i = 0; i < words; i += 3) {
+                    ptr32[i] = w0;
+                    ptr32[i+1] = w1;
+                    ptr32[i+2] = w2;
+                }
+            } else {
+                for (int px = x; px < x + w; px++) {
+                    int pixel_idx = py * fb_width + px;
+                    int byte_idx = (pixel_idx / 2) * 3;
+                    if (pixel_idx % 2 == 0) {
+                        framebuffer[byte_idx] = b0;
+                        framebuffer[byte_idx+1] = (b4 << 4) | (framebuffer[byte_idx+1] & 0x0F);
+                    } else {
+                        framebuffer[byte_idx+1] = (framebuffer[byte_idx+1] & 0xF0) | r4;
+                        framebuffer[byte_idx+2] = b2;
+                    }
                 }
             }
         }
@@ -197,25 +263,11 @@ void framebuffer_swap_async(void) {
     // If RGB332, expand to RGB565 in the expansion buffer
     if (fb_format == PIXEL_FORMAT_RGB332) {
         uint8_t *src = prev_buffer;
-        uint8_t *dst = expansion_buffer;
+        uint16_t *dst = (uint16_t*)expansion_buffer;
         uint32_t pixels = fb_width * fb_height;
         
         for (uint32_t i = 0; i < pixels; i++) {
-            uint8_t rgb332 = *src++;
-            
-            uint8_t r3 = (rgb332 >> 5) & 0x07;
-            uint8_t g3 = (rgb332 >> 2) & 0x07;
-            uint8_t b2 = rgb332 & 0x03;
-            
-            uint16_t r5 = (r3 << 2) | (r3 >> 1);
-            uint16_t g6 = (g3 << 3) | g3;
-            uint16_t b5 = (b2 << 3) | (b2 << 1) | (b2 >> 1);
-            
-            uint16_t rgb565 = (r5 << 11) | (g6 << 5) | b5;
-            
-            // Write in big-endian order (high byte first) for PIO
-            *dst++ = rgb565 >> 8;    // High byte
-            *dst++ = rgb565 & 0xFF;  // Low byte
+            *dst++ = rgb332_to_rgb565[*src++];
         }
         
         send_buffer = expansion_buffer;
@@ -230,6 +282,10 @@ void framebuffer_swap_async(void) {
     
     display_set_window(0, 0, fb_width - 1, fb_height - 1);
     display_start_write();
+    
+    // Tiny delay to ensure DC/CS signals are settled before DMA hammer starts
+    for (int i = 0; i < 50; i++) __asm volatile ("nop");
+    
     dma_spi_transfer(send_buffer, send_size);
     dma_active = true;
 }
@@ -237,6 +293,7 @@ void framebuffer_swap_async(void) {
 void framebuffer_wait_last_swap(void) {
     if (dma_active) {
         dma_spi_wait();
+        for (int i = 0; i < 100; i++) __asm volatile ("nop");
         display_end_write();
         dma_active = false;
     }

@@ -18,6 +18,9 @@ void dma_spi_init(spi_inst_t *spi) {
     channel_config_set_read_increment(&cfg, true);
     channel_config_set_write_increment(&cfg, false);
     
+    // Set high priority to ensure the PIO FIFO is never hungry
+    channel_config_set_high_priority(&cfg, true);
+    
     dma_channel_set_config(dma_channel, &cfg, false);
 }
 
