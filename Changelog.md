@@ -71,7 +71,7 @@
 - 2-cycle clock loop (SysClk / 2 SPI clock).
 - Achieved 98 FPS at 90MHz SPI in RGB444 mode.
 
-### 11. Record-Breaking 103 FPS Stability (8811d5a)
+### 11. Record-Breaking 103 FPS Stability (83b68cb)
 - **Message**: "Achieved 103 FPS with 95MHz SPI, Atomic Command Throttling, and 1.3V VREG boost"
 - **Atomic Command Throttling**: Implemented safe-speed switching (10MHz for setup, 95MHz for data) to prevent display desync at high overclocks.
 - **1.3V Booster**: Forced maximum core voltage for optimized GPIO switching timing.
