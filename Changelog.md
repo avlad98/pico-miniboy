@@ -119,24 +119,33 @@
 - **Panel Driver**: Refactored ILI9341 driver to use the transport interface, removing hardcoded PIO dependencies.
 - **Result**: Codebase prepared for ST7735 and other display panels without duplicating driver logic.
 
+### 15. Graphics Abstraction & Multicore Render Service
+- **`surface_t` Interface**: Implemented a generic drawing surface abstraction.
+- **`render_service`**: Extracted multicore rendering logic into a standalone service with job-offloading.
+- **DMA Instrumentation**: Added wait-time tracking to framebuffer swap for performance profiling.
+- **Memory Safety**: Implemented clean de-initialization for framebuffers and render services.
+
+### 16. Telemetry HUD & System Instrumentation
+- **Expanded HUD**: Upgraded to a 24px two-line overlay for high-density telemetry.
+- **Clock Monitoring**: Integrated real-time CPU and SPI clock frequency display (MHz).
+- **Auto-Detection**: HUD now automatically detects and displays resolution and pixel format.
+- **System Profiling**: Integrated `mallinfo` for accurate heap utilization tracking.
+
 ---
 
 ## Current Roadmap & Tasks
 
 ### High Priority: Performance Improvements
-- [x] **Optimize RGB444 Filling**: Implemented fast-path 32-bit block writes
-  for aligned rectangles.
-- [x] **Optimize RGB332 Expansion**: Integrated LUT for zero-latency expansion.
-- [x] **Command Throttling**: Implemented dynamic SPI frequency switching
-  for stability.
-- [x] **Zero-Wait Sync**: Implemented hardware-level PIO synchronization.
-- [x] **Multicore Rendering**: Offload drawing to Core 1 (Completed:
-  Scanline-Interleaved Clear).
-- [ ] **120FPS+ Hardware Validation**: Debug EXTREME profile on shorter
-  signal paths.
+- [x] **Optimize RGB444 Filling**: Aligned 32-bit block writes.
+- [x] **Optimize RGB332 Expansion**: Zero-latency LUT expansion.
+- [x] **Command Throttling**: Dynamic SPI frequency switching.
+- [x] **Zero-Wait Sync**: PIO hardware-level synchronization.
+- [x] **Multicore Rendering**: Core 1 offloading (Complete).
+- [ ] **120FPS+ Hardware Validation**: Debug EXTREME profile.
 
 ### Feature Parity & Stability
-- [ ] Ensure all performance improvements support RGB565 and RGB444 modes.
-- [ ] Verify signal integrity at frequencies > 100MHz.
+- [x] **Decouple Transport/Panel**: generic transport interface (Complete).
 - [ ] Implement ST7735 driver (1.8" TFT).
-- [ ] Add SD Card support and Button Matrix.
+- [ ] Add Button Matrix Input Driver.
+- [ ] Add SD Card support.
+- [ ] Port Graphics engine to support sprite-based rendering.
