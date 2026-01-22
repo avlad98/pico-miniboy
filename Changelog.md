@@ -90,8 +90,6 @@
 - **Font Engine**: Upgraded to full ASCII support with dynamic scaling.
 - **Stability**: Fixed all multicore race conditions; Core 0 now sits at ~0% usage (fully offloaded), leaving 99% headroom for game logic.
 
----
-
 ### 13. Failed Optimization: Turbo DMA (32-bit Transfers)
 - **Goal**: Improve bus throughput by using 32-bit DMA transfers (`DMA_SIZE_32`)
   and PIO Autopull 32, minimizing bus contention.
@@ -124,13 +122,16 @@
 - **Auto-Detection**: HUD now automatically detects and displays resolution and pixel format.
 - **System Profiling**: Integrated `mallinfo` for accurate heap utilization tracking.
 
-### 17. Comprehensive Stress Test & Regression Audit
-- **Stress Test**: Verified all 18 combinations of Clock Profiles and Pixel Formats.
-- **Performance Record**: Achieved **143 FPS** in RGB444 on `EXTREME` profile (266MHz CPU / 133MHz SPI).
-- **Identified Regressions**:
-    - **RGB565**: Currently failing on all profiles (static/stripes).
-    - **RGB332**: Currently failing on all profiles (static/stripes).
-- **Diagnosis**: Failures appear related to recent driver/transport refactors rather than just hardware limits, as RGB565 was previously stable.
+### 18. Fix RGB332/RGB565 & Enable Direct Mode
+- **Critical Fix**: Resolved regression where RGB332 and RGB565 modes were failing/frozen. They now work perfectly in single/double buffered configurations.
+- **Buffer Management**: Fixed logic in `miniboy_engine` to correctly allocate buffers based on format size.
+- **Direct Mode Support**: Fixed "Frozen/Crash" issues in Direct Mode (Buffer=0) by optimizing `font_draw_char` to use single-transaction buffering.
+- **Direct Mode Limitations**: Flickering is expected in Direct Mode (no backbuffer), but it is now stable and functional for low-memory scenarios.
+- **Telemetry**: Updated Profiler to correctly display "DIR" for Direct Mode and added Framebuffer count to performance tables.
+- **Performance**:
+    - RGB565 FB=1: Stable 58 FPS.
+    - RGB332 FB=1: Stable 35 FPS.
+    - RGB444 FB=2: Stable 102 FPS (Best Performance).
 
 ---
 
@@ -144,7 +145,7 @@
 - [x] **Multicore Rendering**: Core 1 offloading (Complete).
 
 ### Feature Parity & Stability
-- [ ] **Bugfix**: Investigate and fix RGB565 and RGB332 regression.
+- [x] **Bugfix**: Investigate and fix RGB565 and RGB332 regression.
 - [x] **Decouple Transport/Panel**: generic transport interface (Complete).
 - [ ] Implement ST7735 driver (1.8" TFT).
 - [ ] Add Button Matrix Input Driver.

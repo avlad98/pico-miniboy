@@ -6,44 +6,55 @@
 #include <stdlib.h>
 #include <string.h>
 
-static surface_t surfaces[2];
+static surface_t surfaces[3]; // Max 3 buffers
 static uint8_t *expansion_buffer = NULL;
 static uint8_t back_buffer_idx = 0;
+static uint8_t front_buffer_idx = 0; // Only relevant for >1 buffers
+static uint8_t buffer_count = 2;     // Default
 static uint16_t rgb332_to_rgb565[256];
 static bool lut_initialized = false;
-static bool swap_active = false;
+static bool swap_active = false; // DMA is busy
 
 // Instrumentation
 static volatile uint32_t last_wait_time_us = 0;
 
 bool framebuffer_init(uint16_t width, uint16_t height,
-                      display_pixel_format_t format) {
+                      display_pixel_format_t format, uint8_t count) {
+  if (count > 3)
+    count = 3;
+  buffer_count = count; // 0 = Direct Mode
+  back_buffer_idx = 0;
+  front_buffer_idx = 0;
+
   uint32_t fb_size = 0;
-  if (format == PIXEL_FORMAT_RGB565) {
-    fb_size = width * height * 2;
-  } else if (format == PIXEL_FORMAT_RGB444) {
-    fb_size = (width * height * 3) / 2;
-  } else { // RGB332
-    fb_size = width * height;
-    expansion_buffer = (uint8_t *)malloc(width * height * 2);
-    if (expansion_buffer == NULL)
-      return false;
+  if (count > 0) {
+    if (format == PIXEL_FORMAT_RGB565) {
+      fb_size = width * height * 2;
+    } else if (format == PIXEL_FORMAT_RGB444) {
+      fb_size = (width * height * 3) / 2;
+    } else { // RGB332
+      fb_size = width * height;
+      // Line buffers for streaming expansion (Ping-Pong: 2 lines)
+      expansion_buffer = (uint8_t *)malloc(width * 2 * 2);
+      if (expansion_buffer == NULL)
+        return false;
+    }
   }
 
-  for (int i = 0; i < 2; i++) {
-    surfaces[i].pixels = (uint8_t *)malloc(fb_size);
-    if (surfaces[i].pixels == NULL)
-      return false;
+  for (int i = 0; i < 3; i++) {
+    if (i < count && count > 0) {
+      surfaces[i].pixels = (uint8_t *)malloc(fb_size);
+      if (surfaces[i].pixels == NULL)
+        return false;
+      memset(surfaces[i].pixels, 0, fb_size);
+    } else {
+      surfaces[i].pixels = NULL; // Direct mode or unused
+    }
     surfaces[i].width = width;
     surfaces[i].height = height;
     surfaces[i].format = format;
     surfaces[i].size = fb_size;
-    memset(surfaces[i].pixels, 0, fb_size);
   }
-
-  // Special case for RGB565: use same buffer for both if we want
-  // single-buffering (not currently used) but the logic above creates two
-  // buffers always.
 
   if (!lut_initialized) {
     for (int i = 0; i < 256; i++) {
@@ -68,6 +79,15 @@ bool framebuffer_init(uint16_t width, uint16_t height,
 surface_t *framebuffer_get_surface(void) { return &surfaces[back_buffer_idx]; }
 
 void draw_clear(surface_t *surf, uint16_t color) {
+  if (surf->pixels == NULL) {
+    // Direct Mode Flood
+    display_set_window(0, 0, surf->width - 1, surf->height - 1);
+    display_start_bulk();
+    display_push_pixels(color, (uint32_t)surf->width * surf->height);
+    display_end_bulk();
+    return;
+  }
+
   // Note: This still uses the render_service for multicore clearing
   uint32_t total_bytes = surf->size;
   uint32_t half_bytes = total_bytes / 2;
@@ -131,6 +151,15 @@ void draw_pixel(surface_t *surf, int x, int y, uint16_t color) {
   if (x < 0 || x >= surf->width || y < 0 || y >= surf->height)
     return;
 
+  if (surf->pixels == NULL) {
+    // Direct Mode
+    display_set_window(x, y, x, y);
+    display_start_bulk();
+    display_push_pixels(color, 1);
+    display_end_bulk();
+    return;
+  }
+
   if (surf->format == PIXEL_FORMAT_RGB565) {
     int idx = (y * surf->width + x) * 2;
     surf->pixels[idx] = color >> 8;
@@ -173,6 +202,15 @@ void draw_rect(surface_t *surf, int x, int y, int w, int h, uint16_t color) {
     h = surf->height - y;
   if (w <= 0 || h <= 0)
     return;
+
+  if (surf->pixels == NULL) {
+    // Direct Mode
+    display_set_window(x, y, x + w - 1, y + h - 1);
+    display_start_bulk();
+    display_push_pixels(color, (uint32_t)w * h);
+    display_end_bulk();
+    return;
+  }
 
   if (surf->format == PIXEL_FORMAT_RGB444) {
     uint8_t r4 = ((color >> 11) & 0x1F) >> 1;
@@ -239,7 +277,7 @@ void framebuffer_fill_circle(int cx, int cy, int radius, uint16_t color) {
 void framebuffer_wait_last_swap(void) {
   if (swap_active) {
     uint32_t start = time_us_32();
-    display_end_bulk();
+    display_end_bulk(); // Wait for DMA
     last_wait_time_us += (time_us_32() - start);
     swap_active = false;
   }
@@ -251,24 +289,79 @@ void framebuffer_swap_async(void) {
   uint32_t send_size = surf->size;
 
   if (surf->format == PIXEL_FORMAT_RGB332) {
-    uint16_t *dst = (uint16_t *)expansion_buffer;
-    for (uint32_t i = 0; i < surf->width * surf->height; i++) {
-      dst[i] = rgb332_to_rgb565[send_buffer[i]];
+    // RGB332 Streaming Mode (Line-by-Line)
+    // Minimizes RAM usage to enable Double/Triple buffering.
+    framebuffer_wait_last_swap(); // Ensure previous frame is done
+    
+    uint16_t *line_buf = (uint16_t *)expansion_buffer;
+    
+    for (int y = 0; y < surf->height; y++) {
+        // 1. Convert Line
+        uint8_t *src = surf->pixels + (y * surf->width);
+        for (int x = 0; x < surf->width; x++) {
+            line_buf[x] = rgb332_to_rgb565[src[x]];
+        }
+        
+        // 2. Send Line Sync
+        display_set_window(0, y, surf->width - 1, y);
+        display_start_bulk();
+        display_send_buffer((uint8_t*)line_buf, surf->width * 2);
+        display_end_bulk(); // Waits for DMA
     }
-    send_buffer = expansion_buffer;
-    send_size = surf->width * surf->height * 2;
+    
+    // Update Buffer Index manually as we sent the frame line-by-line
+    
+    if (buffer_count == 2) {
+        back_buffer_idx = 1 - back_buffer_idx;
+    } else if (buffer_count == 3) {
+        back_buffer_idx = (back_buffer_idx + 1) % 3;
+    }
+    
+    swap_active = false; // We finished synchronously.
+    return;
   }
 
-  back_buffer_idx = 1 - back_buffer_idx;
-  framebuffer_wait_last_swap();
+  // --- Swap Logic ---
 
-  display_set_window(0, 0, surf->width - 1, surf->height - 1);
-  display_start_bulk();
-  display_send_buffer(send_buffer, send_size);
-  swap_active = true;
+  if (buffer_count == 1) {
+    // Single Buffer: MUST wait for previous frame to finish before sending
+    // again
+    framebuffer_wait_last_swap();
+    // Now trigger send
+    display_set_window(0, 0, surf->width - 1, surf->height - 1);
+    display_start_bulk();
+    display_send_buffer(send_buffer, send_size);
+    swap_active = true;
+
+    // Tearing artifacts are expected in Single Buffer mode.
+  } else if (buffer_count == 2) {
+    // Double Buffer: Standard ping-pong
+    // 1. Wait for PREVIOUS DMA to finish
+    framebuffer_wait_last_swap();
+
+    // 2. Start DMA on CURRENT back buffer
+    display_set_window(0, 0, surf->width - 1, surf->height - 1);
+    display_start_bulk();
+    display_send_buffer(send_buffer, send_size);
+    swap_active = true;
+
+    // 3. Flip index
+    back_buffer_idx = 1 - back_buffer_idx;
+  } else if (buffer_count == 3) {
+    // Triple Buffer
+    framebuffer_wait_last_swap();
+
+    display_set_window(0, 0, surf->width - 1, surf->height - 1);
+    display_start_bulk();
+    display_send_buffer(send_buffer, send_size);
+    swap_active = true;
+
+    back_buffer_idx = (back_buffer_idx + 1) % 3;
+  }
 }
 
 uint32_t framebuffer_get_last_wait_time(void) { return last_wait_time_us; }
+uint8_t framebuffer_get_buffer_count(void) { return buffer_count; }
 void framebuffer_reset_profile_stats(void) {
   render_service_reset_stats();
   last_wait_time_us = 0;

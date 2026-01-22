@@ -1,5 +1,7 @@
 #include "font.h"
 #include "framebuffer.h"
+#include "display_driver.h"
+
 
 static const uint8_t font_5x7_data[][5] = {
     {0x00, 0x00, 0x00, 0x00, 0x00}, //   0x20
@@ -81,6 +83,26 @@ void font_draw_char(surface_t *surf, int x, int y, char c, uint16_t fg,
 
   int index = c - 0x20;
   const uint8_t *glyph = font->data + (index * 5);
+
+  if (surf->pixels == NULL && font->scale == 1) {
+    uint16_t buffer[35];
+    uint16_t fg_be = (fg >> 8) | (fg << 8);
+    uint16_t bg_be = (bg >> 8) | (bg << 8);
+
+    int idx = 0;
+    for (int row = 0; row < 7; row++) {
+      for (int col = 0; col < 5; col++) {
+        uint8_t bits = glyph[col];
+        buffer[idx++] = (bits & (1 << row)) ? fg_be : bg_be;
+      }
+    }
+    
+    display_set_window(x, y, x + 4, y + 6);
+    display_start_bulk();
+    display_send_buffer((uint8_t *)buffer, 70);
+    display_end_bulk();
+    return;
+  }
 
   for (int col = 0; col < 5; col++) {
     uint8_t bits = glyph[col];

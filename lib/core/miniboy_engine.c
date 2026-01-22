@@ -8,16 +8,19 @@
 #include <stdio.h>
 
 static display_transport_t *transport = NULL;
+static engine_config_t engine_config;
 
 bool engine_init(const engine_config_t *config) {
+  engine_config = *config;
   // 1. System Configuration
   const system_config_t *sys_cfg;
-  if (config->performance_profile == 0)
-    sys_cfg = &system_profiles[0]; // STABLE
-  else if (config->performance_profile == 2)
-    sys_cfg = &system_profiles[5]; // EXTREME
-  else
-    sys_cfg = &system_profiles[3]; // HIGH (Default)
+  // Use the profile index directly since we now use an enum matching the array
+  if (config->performance_profile >= 0 &&
+      config->performance_profile < 6) { // 6 profiles in system_config.c
+    sys_cfg = &system_profiles[config->performance_profile];
+  } else {
+    sys_cfg = &system_profiles[3]; // Default HIGH
+  }
 
   system_init(sys_cfg);
   stdio_init_all();
@@ -37,13 +40,7 @@ bool engine_init(const engine_config_t *config) {
   transport->init(transport, sys_cfg->spi_hz_init, sys_cfg->spi_hz_fast);
 
   // 3. Display Configuration
-  display_pixel_format_t fmt;
-  if (config->pixel_format == 1)
-    fmt = PIXEL_FORMAT_RGB444;
-  else if (config->pixel_format == 2)
-    fmt = PIXEL_FORMAT_RGB332;
-  else
-    fmt = PIXEL_FORMAT_RGB565;
+  display_pixel_format_t fmt = config->pixel_format;
 
   display_config_t disp_cfg = {.transport = transport,
                                .pin_rst = 20,
@@ -55,7 +52,9 @@ bool engine_init(const engine_config_t *config) {
 
   // 4. Graphics Engine
   system_set_actual_spi_hz(sys_cfg->spi_hz_fast);
-  if (!framebuffer_init(config->width, config->height, fmt)) {
+  uint8_t bufs = config->buffer_count;
+
+  if (!framebuffer_init(config->width, config->height, fmt, bufs)) {
     printf("CORE: Framebuffer allocation failed!\n");
     return false;
   }
@@ -93,7 +92,15 @@ void engine_run(const miniapp_desc_t *app) {
     // 4. Present
     framebuffer_swap_async();
 
-    // 5. Stats
+    // 6. Single-Buffer Synchronization
+    // If we only have 1 buffer, we cannot start drawing the next frame
+    // until the current one has finished sending to the display, otherwise
+    // we will overwrite data as it is being sent (Tearing/Corruption).
+    if (engine_config.buffer_count == 1) {
+      framebuffer_wait_last_swap();
+    }
+
+    // 5. Stats (Updated after sync to capture real frame time)
     uint32_t t_end = time_us_32();
     profiler_update(t_end - t0);
   }

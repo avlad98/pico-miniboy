@@ -81,26 +81,23 @@ This section documents architectural experiments to prevent regression and guide
 
 This matrix tracks the stability and performance of the engine across all supported clock and color profiles.
 
-| Profile | Format | CPU/SPI (MHz) | FPS | C0/C1 Use | RAM | Status | Notes |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **STABLE** | RGB444 | 240 / 60 | 65 | 0% / 1% | 225K | ✅ Working | Baseline stability test |
-| **STABLE** | RGB332 | 240 / 60 | - | - | - | ❌ Failing | Static noise and black stripes |
-| **STABLE** | RGB565 | 240 / 60 | - | - | - | ❌ Failing | Static noise and black stripes |
-| **BALANCED** | RGB444 | 270 / 67.5 | 73 | 0% / 1% | 225K | ✅ Working | Stable bump |
-| **BALANCED** | RGB332 | 270 / 67.5 | - | - | - | ❌ Failing | Static noise and black stripes |
-| **BALANCED** | RGB565 | 270 / 67.5 | - | - | - | ❌ Failing | Static noise and black stripes |
-| **TURBO** | RGB444 | 160 / 80 | 86 | 0% / 2% | 225K | ✅ Working | |
-| **TURBO** | RGB332 | 160 / 80 | - | - | - | ❌ Failing | Static noise and black stripes |
-| **TURBO** | RGB565 | 160 / 80 | - | - | - | ❌ Failing | Static noise and black stripes |
-| **HIGH** | RGB444 | 190 / 95 | 102 | 0% / 2% | 225K | ✅ Working | Previous record level |
-| **HIGH** | RGB332 | 190 / 95 | - | - | - | ❌ Failing | Static noise and black stripes |
-| **HIGH** | RGB565 | 190 / 95 | - | - | - | ❌ Failing | Static noise and black stripes |
-| **MAX** | RGB444 | 220 / 110 | 119 | 0% / 2% | 225K | ⚠️ Glitchy | Cascading pixels / signal noise |
-| **MAX** | RGB332 | 220 / 110 | - | - | - | ❌ Failing | Static noise and black stripes |
-| **MAX** | RGB565 | 220 / 110 | - | - | - | ❌ Failing | Static noise and black stripes |
-| **EXTREME** | RGB444 | 266 / 133 | 143 | 0% / 2% | 225K | ⚠️ Glitchy | Background turns black |
-| **EXTREME** | RGB332 | 266 / 133 | - | - | - | ❌ Failing | Static noise and black stripes |
-| **EXTREME** | RGB565 | 266 / 133 | - | - | - | ❌ Failing | Static noise and black stripes |
+| Profile | Format | FB | CPU/SPI (MHz) | FPS | C0/C1 Use | RAM | Status | Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **STABLE** | RGB444 | 2 | 240 / 60 | 65 | 0% / 1% | 225K | ✅ Working | Baseline stability test |
+| **BALANCED** | RGB444 | 2 | 270 / 67.5 | 73 | 0% / 1% | 225K | ✅ Working | Stable bump |
+| **TURBO** | RGB444 | 2 | 160 / 80 | 86 | 0% / 2% | 225K | ✅ Working | |
+| **HIGH** | RGB565 | 0 | 190 / 95 | 52 | 100% / 0% | 0K | ⚠️ Glitchy | Flickering ball/UI |
+| **HIGH** | RGB565 | 1 | 190 / 95 | 58 | 100% / 0% | 150K | ✅ Working | Perfect visual fidelity |
+| **HIGH** | RGB332 | 0 | 190 / 95 | - | - | - | ❌ Failing | Frozen at first frame |
+| **HIGH** | RGB332 | 1 | 190 / 95 | 35 | 100% / 0% | 76K | ✅ Working | Perfect visual fidelity |
+| **HIGH** | RGB332 | 2 | 190 / 95 | 35 | 100% / 0% | 151K | ✅ Working | Perfect visual fidelity |
+| **HIGH** | RGB332 | 3 | 190 / 95 | 35 | 100% / 0% | 226K | ✅ Working | Perfect visual fidelity |
+| **HIGH** | RGB444 | 0 | 190 / 95 | ~70 | - | 0K | ⚠️ Glitchy | Flickering, unintelligible UI |
+| **HIGH** | RGB444 | 1 | 190 / 95 | 71 | 0% / 1% | 112K | ✅ Working | Perfect visual fidelity |
+| **HIGH** | RGB444 | 2 | 190 / 95 | 102 | 0% / 2% | 225K | ✅ Working | **Best Performance** |
+| **HIGH** | RGB444 | 3 | 190 / 95 | - | - | 266K+ | ❌ Failing | Static/stripes (RAM Overflow) |
+| **MAX** | RGB444 | 2 | 220 / 110 | 119 | 0% / 2% | 225K | ⚠️ Glitchy | Cascading pixels / signal noise |
+| **EXTREME** | RGB444 | 2 | 266 / 133 | 143 | 0% / 2% | 225K | ⚠️ Glitchy | Background turns black |
 
 **Note**: Current failures (static/stripes) appear to be driver-related regressions.
 

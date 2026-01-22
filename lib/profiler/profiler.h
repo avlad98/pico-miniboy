@@ -15,6 +15,7 @@ typedef struct {
   uint32_t cpu_hz;
   uint32_t spi_hz;
   const char *pixel_format;
+  uint8_t buffer_count;
   uint16_t width;
   uint16_t height;
 } system_stats_t;

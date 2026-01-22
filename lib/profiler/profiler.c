@@ -95,6 +95,8 @@ void profiler_update(uint32_t frame_time_us) {
     // --- RAM Usage ---
     struct mallinfo m = mallinfo();
     current_stats.ram_used_bytes = m.uordblks; // Used heap
+
+    current_stats.buffer_count = framebuffer_get_buffer_count();
   }
 }
 
@@ -138,20 +140,26 @@ void profiler_draw(void) {
                    &font_5x7);
   font_draw_string(surf, 50, y2, "MHz", 0xAAAA, 0x0000, &font_5x7);
 
-  font_draw_string(surf, 80, y2, "SPI:", 0xAAAA, 0x0000, &font_5x7);
-  font_draw_number(surf, 105, y2, current_stats.spi_hz / 1000000, 0xFFFF,
+  font_draw_string(surf, 75, y2, "SPI:", 0xAAAA, 0x0000, &font_5x7);
+  font_draw_number(surf, 100, y2, current_stats.spi_hz / 1000000, 0xFFFF,
                    0x0000, &font_5x7);
-  font_draw_string(surf, 125, y2, "MHz", 0xAAAA, 0x0000, &font_5x7);
 
-  font_draw_string(surf, 160, y2, "MODE:", 0xAAAA, 0x0000, &font_5x7);
+  font_draw_string(surf, 120, y2, "FMT:", 0xAAAA, 0x0000, &font_5x7);
   if (current_stats.pixel_format)
-    font_draw_string(surf, 195, y2, current_stats.pixel_format, 0xFBC0, 0x0000,
+    font_draw_string(surf, 145, y2, current_stats.pixel_format, 0xFBC0, 0x0000,
                      &font_5x7);
 
-  font_draw_string(surf, 245, y2, "RES:", 0xAAAA, 0x0000, &font_5x7);
-  font_draw_number(surf, 270, y2, current_stats.width, 0xFFFF, 0x0000,
+  font_draw_string(surf, 190, y2, "BUF:", 0xAAAA, 0x0000, &font_5x7);
+  if (current_stats.buffer_count == 0) {
+      font_draw_string(surf, 215, y2, "DIR", 0xFFFF, 0x0000, &font_5x7);
+  } else {
+      font_draw_number(surf, 215, y2, current_stats.buffer_count, 0xFFFF, 0x0000, &font_5x7);
+  }
+
+  font_draw_string(surf, 235, y2, "RES:", 0xAAAA, 0x0000, &font_5x7);
+  font_draw_number(surf, 260, y2, current_stats.width, 0xFFFF, 0x0000,
                    &font_5x7);
-  font_draw_char(surf, 290, y2, 'x', 0xAAAA, 0x0000, &font_5x7);
-  font_draw_number(surf, 297, y2, current_stats.height, 0xFFFF, 0x0000,
+  font_draw_char(surf, 280, y2, 'x', 0xAAAA, 0x0000, &font_5x7);
+  font_draw_number(surf, 287, y2, current_stats.height, 0xFFFF, 0x0000,
                    &font_5x7);
 }

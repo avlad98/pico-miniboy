@@ -8,8 +8,9 @@
 #include "surface.h"
 
 // Initialize framebuffer
+// Initialize framebuffer (buffer_count: 1=Single, 2=Double, 3=Triple)
 bool framebuffer_init(uint16_t width, uint16_t height,
-                      display_pixel_format_t format);
+                      display_pixel_format_t format, uint8_t buffer_count);
 
 // Get the active drawing surface
 surface_t *framebuffer_get_surface(void);
@@ -28,6 +29,7 @@ void framebuffer_wait_last_swap(void);
 
 // Performance & Profiling
 uint32_t framebuffer_get_last_wait_time(void);
+uint8_t framebuffer_get_buffer_count(void);
 void framebuffer_reset_profile_stats(void);
 
 #endif

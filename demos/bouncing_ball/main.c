@@ -47,8 +47,9 @@ int main() {
   engine_config_t cfg = {
       .width = 320,
       .height = 240,
-      .pixel_format = 1,       // RGB444
-      .performance_profile = 1 // HIGH
+      .pixel_format = PIXEL_FORMAT_RGB444,
+      .performance_profile = PROFILE_HIGH,
+      .buffer_count = 2
   };
 
   if (engine_init(&cfg)) {

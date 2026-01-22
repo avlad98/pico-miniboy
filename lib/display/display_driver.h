@@ -27,6 +27,7 @@ void display_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
 void display_start_bulk(void);
 void display_end_bulk(void);
 void display_send_buffer(const uint8_t *data, uint32_t len);
+void display_push_pixels(uint16_t color, uint32_t count);
 
 // Get dimensions
 uint16_t display_get_width(void);
