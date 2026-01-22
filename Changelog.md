@@ -112,6 +112,13 @@
 - **Outcome**: Fully reverted to 8-bit DMA (Stable 102 FPS). The code for
   32-bit optimization was deemed too unstable/complex to keep in the codebase.
 
+### 14. Level 1 Refactor: Transport/Panel Decoupling
+- **Goal**: Enable multi-display support and separate transport logic from panel commands.
+- **Display Transport**: Created a generic interface for PIO/SPI communication.
+- **PIO Transport**: Encapsulated zero-wait hardware sync and DMA into a reusable module.
+- **Panel Driver**: Refactored ILI9341 driver to use the transport interface, removing hardcoded PIO dependencies.
+- **Result**: Codebase prepared for ST7735 and other display panels without duplicating driver logic.
+
 ---
 
 ## Current Roadmap & Tasks

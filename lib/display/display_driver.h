@@ -1,45 +1,35 @@
 #ifndef DISPLAY_DRIVER_H
 #define DISPLAY_DRIVER_H
 
+#include "display_transport.h"
 #include "pico/stdlib.h"
-#include "hardware/spi.h"
-#include "system_config.h"
 
 typedef enum {
-    PIXEL_FORMAT_RGB565 = 0x55,  // 16-bit: 65,536 colors
-    PIXEL_FORMAT_RGB444 = 0x53,  // 12-bit: 4,096 colors
-    PIXEL_FORMAT_RGB332 = 0x52   // 8-bit: 256 colors
+  PIXEL_FORMAT_RGB565 = 0x55, // 16-bit: 65,536 colors
+  PIXEL_FORMAT_RGB444 = 0x53, // 12-bit: 4,096 colors
+  PIXEL_FORMAT_RGB332 = 0x52  // 8-bit: 256 colors
 } display_pixel_format_t;
 
 typedef struct {
-    spi_inst_t *spi;
-    uint8_t pin_cs;
-    uint8_t pin_sck;
-    uint8_t pin_mosi;
-    uint8_t pin_miso;
-    uint8_t pin_rst;
-    uint8_t pin_dc;
-    uint8_t pin_bl;
-    uint16_t width;
-    uint16_t height;
-    display_pixel_format_t format;
+  display_transport_t *transport;
+  uint8_t pin_rst;
+  uint8_t pin_bl;
+  uint16_t width;
+  uint16_t height;
+  display_pixel_format_t format;
 } display_config_t;
 
-// Initialize display hardware (uses system_config for SPI speeds)
-void display_init(const display_config_t *config, const system_config_t *sys_config);
+// Initialize display hardware
+void display_init(const display_config_t *config);
 
-// Low-level display commands
-void display_cmd(uint8_t cmd);
-void display_data(uint8_t data);
+// Panel abstraction
 void display_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
-void display_start_write(void);
-void display_end_write(void);
+void display_start_bulk(void);
+void display_end_bulk(void);
+void display_send_buffer(const uint8_t *data, uint32_t len);
 
 // Get dimensions
 uint16_t display_get_width(void);
 uint16_t display_get_height(void);
-
-// Get SPI instance
-spi_inst_t* display_get_spi(void);
 
 #endif

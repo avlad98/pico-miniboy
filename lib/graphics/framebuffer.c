@@ -1,7 +1,6 @@
 #include "framebuffer.h"
 #include "display_driver.h"
 #include "dma_mem.h"
-#include "dma_spi.h"
 #include "pico/multicore.h"
 #include <stdlib.h>
 #include <string.h>
@@ -349,10 +348,9 @@ void framebuffer_fill_circle(int cx, int cy, int radius, uint16_t color) {
 void framebuffer_wait_last_swap(void) {
   if (dma_active) {
     uint32_t start = time_us_32();
-    dma_spi_wait();
+    display_end_bulk();
     last_wait_time_us += (time_us_32() - start);
 
-    display_end_write();
     dma_active = false;
   }
 }
@@ -377,7 +375,7 @@ void framebuffer_swap_async(void) {
   }
 
   display_set_window(0, 0, fb_width - 1, fb_height - 1);
-  display_start_write();
-  dma_spi_transfer(send_buffer, send_size);
+  display_start_bulk();
+  display_send_buffer(send_buffer, send_size);
   dma_active = true;
 }
