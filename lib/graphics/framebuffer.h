@@ -1,37 +1,33 @@
 #ifndef FRAMEBUFFER_H
 #define FRAMEBUFFER_H
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "display_driver.h"
+#include "surface.h"
 
 // Initialize framebuffer
-bool framebuffer_init(uint16_t width, uint16_t height, display_pixel_format_t format);
+bool framebuffer_init(uint16_t width, uint16_t height,
+                      display_pixel_format_t format);
 
-// Get framebuffer info
-uint8_t* framebuffer_get_buffer(void);
-uint32_t framebuffer_get_size(void);
+// Get the active drawing surface
+surface_t *framebuffer_get_surface(void);
 
-// Drawing primitives
-// Returns the time spent waiting for the previous frame's DMA to finish (Idle time)
-uint32_t framebuffer_get_last_wait_time(void);
-uint32_t framebuffer_get_core1_busy_us(void);
-void framebuffer_reset_profile_stats(void);
+// Primitive drawing on a surface
+void draw_clear(surface_t *surf, uint16_t color);
+void draw_pixel(surface_t *surf, int x, int y, uint16_t color);
+void draw_rect(surface_t *surf, int x, int y, int w, int h, uint16_t color);
+void draw_circle(surface_t *surf, int cx, int cy, int radius, uint16_t color);
 
+// High-level framebuffer operations
 void framebuffer_clear(uint16_t color);
-void framebuffer_set_pixel(int x, int y, uint16_t color);
-void framebuffer_fill_rect(int x, int y, int w, int h, uint16_t color);
 void framebuffer_fill_circle(int cx, int cy, int radius, uint16_t color);
-void framebuffer_wait_clear(void);
-
-// Send framebuffer to display (blocking)
-void framebuffer_swap(void);
-
-// Start swap and return immediately (non-blocking)
 void framebuffer_swap_async(void);
-
-// Wait for previous async swap to complete
 void framebuffer_wait_last_swap(void);
+
+// Performance & Profiling
+uint32_t framebuffer_get_last_wait_time(void);
+void framebuffer_reset_profile_stats(void);
 
 #endif

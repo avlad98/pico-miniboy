@@ -1,9 +1,6 @@
 #include "font.h"
 #include "framebuffer.h"
 
-// 5x7 digit font data (0-9)
-// 5x7 ASCII font (Partial: Space, %, 0-9, :, @, A-Z)
-// 0x20 (Space) to 0x5A (Z)
 static const uint8_t font_5x7_data[][5] = {
     {0x00, 0x00, 0x00, 0x00, 0x00}, //   0x20
     {0x00, 0x00, 0x5F, 0x00, 0x00}, // ! 0x21
@@ -66,58 +63,49 @@ static const uint8_t font_5x7_data[][5] = {
     {0x61, 0x51, 0x49, 0x45, 0x43}  // Z 0x5A
 };
 
-const font_t font_5x7 = {
-    .data = (const uint8_t *)font_5x7_data,
-    .width = 5,
-    .height = 7,
-    .scale = 1 // Tiny scale
-};
+const font_t font_5x7 = {.data = (const uint8_t *)font_5x7_data,
+                         .width = 5,
+                         .height = 7,
+                         .scale = 1};
 
-void font_draw_char(int x, int y, char c, uint16_t fg, uint16_t bg,
-                    const font_t *font) {
+void font_draw_char(surface_t *surf, int x, int y, char c, uint16_t fg,
+                    uint16_t bg, const font_t *font) {
   if (c < 0x20 || c > 0x5A) {
-    // Simple remap for lowercase to uppercase if needed, otherwise '?'
     if (c >= 'a' && c <= 'z')
       c -= 32;
     else if (c == 'k')
-      c = 'K'; // Special handle for K
+      c = 'K';
     else
       return;
   }
 
   int index = c - 0x20;
-  const uint8_t *glyph = font->data;
-  glyph += index * 5;
+  const uint8_t *glyph = font->data + (index * 5);
 
-  // Font data is Column-Major: 5 columns per char, 1 byte per column.
-  // LSB is top row.
   for (int col = 0; col < 5; col++) {
     uint8_t bits = glyph[col];
     for (int row = 0; row < 7; row++) {
       uint16_t color = (bits & (1 << row)) ? fg : bg;
-      // Always draw background to ensure previous text is overwritten
-      framebuffer_fill_rect(x + col * font->scale, y + row * font->scale,
-                            font->scale, font->scale, color);
+      draw_rect(surf, x + col * font->scale, y + row * font->scale, font->scale,
+                font->scale, color);
     }
   }
 }
 
-void font_draw_string(int x, int y, const char *str, uint16_t fg, uint16_t bg,
-                      const font_t *font) {
+void font_draw_string(surface_t *surf, int x, int y, const char *str,
+                      uint16_t fg, uint16_t bg, const font_t *font) {
   int cursor_x = x;
   while (*str) {
-    font_draw_char(cursor_x, y, *str, fg, bg, font);
-    cursor_x += (font->width + 1) * font->scale; // +1 for spacing
+    font_draw_char(surf, cursor_x, y, *str, fg, bg, font);
+    cursor_x += (font->width + 1) * font->scale;
     str++;
   }
 }
 
-void font_draw_number(int x, int y, int num, uint16_t fg, uint16_t bg,
-                      const font_t *font) {
-  // Convert number to string and draw
+void font_draw_number(surface_t *surf, int x, int y, int num, uint16_t fg,
+                      uint16_t bg, const font_t *font) {
   char buffer[16];
   int len = 0;
-
   if (num == 0) {
     buffer[len++] = '0';
   } else {
@@ -127,7 +115,6 @@ void font_draw_number(int x, int y, int num, uint16_t fg, uint16_t bg,
       digits++;
       temp /= 10;
     }
-
     for (int i = digits - 1; i >= 0; i--) {
       buffer[i] = '0' + (num % 10);
       num /= 10;
@@ -135,6 +122,5 @@ void font_draw_number(int x, int y, int num, uint16_t fg, uint16_t bg,
     len = digits;
   }
   buffer[len] = '\0';
-
-  font_draw_string(x, y, buffer, fg, bg, font);
+  font_draw_string(surf, x, y, buffer, fg, bg, font);
 }

@@ -73,7 +73,8 @@ int main() {
     }
 
     // Draw circle
-    framebuffer_fill_circle(circle_x, circle_y, circle_radius, 0xFFE0);
+    draw_circle(framebuffer_get_surface(), circle_x, circle_y, circle_radius,
+                0xFFE0);
 
     // Draw Profiler Stats HUD
     profiler_draw();

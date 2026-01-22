@@ -35,6 +35,7 @@ target_link_libraries(display PUBLIC
 # Graphics Library
 add_library(graphics STATIC
     graphics/framebuffer.c
+    graphics/render_service.c
     graphics/font.c
 )
 target_include_directories(graphics PUBLIC
