@@ -15,6 +15,7 @@ target_link_libraries(bouncing_ball
     system_config
     display
     graphics
+    profiler
 )
 
 pico_add_extra_outputs(bouncing_ball)

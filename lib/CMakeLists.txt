@@ -42,5 +42,18 @@ target_include_directories(graphics PUBLIC
 )
 target_link_libraries(graphics PUBLIC
     pico_stdlib
+    pico_multicore
     display
+)
+
+# Profiler Library
+add_library(profiler STATIC
+    profiler/profiler.c
+)
+target_include_directories(profiler PUBLIC
+    profiler
+)
+target_link_libraries(profiler PUBLIC
+    pico_stdlib
+    graphics
 )

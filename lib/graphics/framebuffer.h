@@ -14,6 +14,11 @@ uint8_t* framebuffer_get_buffer(void);
 uint32_t framebuffer_get_size(void);
 
 // Drawing primitives
+// Returns the time spent waiting for the previous frame's DMA to finish (Idle time)
+uint32_t framebuffer_get_last_wait_time(void);
+uint32_t framebuffer_get_core1_busy_us(void);
+void framebuffer_reset_profile_stats(void);
+
 void framebuffer_clear(uint16_t color);
 void framebuffer_set_pixel(int x, int y, uint16_t color);
 void framebuffer_fill_rect(int x, int y, int w, int h, uint16_t color);

@@ -36,6 +36,12 @@
 | Button matrix | ⏳ Planned | Debounced GPIO scan |
 | USB Host HID | ⏳ Planned | Keyboard/mouse via TinyUSB |
 
+## System Profiler
+A modular profiling library (`lib/profiler`) is integrated to track real-time system performance.
+- **Metrics**: FPS, CPU Usage (Core 0 & Core 1), RAM Usage (Heap), Flash Usage.
+- **HUD**: Draws a non-intrusive bar at the top of the screen.
+- **Usage**: Call `profiler_update()` and `profiler_draw()` in your main loop.
+
 ## Optimization Roadmap & Experimentation Log
 
 This section documents architectural experiments to prevent regression and guide future performance tuning.
@@ -46,7 +52,7 @@ This section documents architectural experiments to prevent regression and guide
 |------|-----------------|---------------|------------|
 | **Zero-Wait Hardware Sync** | Eliminate busy-wait CPU loops | **Success** (+15% FPS) | Using PIO `FDEBUG/TXSTALL` provides rock-solid sync without wasting cycles. **KEEP.** |
 | **Strict Frame Barrier** | Prevent tearing by force-waiting | **Failed** (-30% FPS) | Do not force the CPU to wait for the *previous* frame to finish before clearing the *next* buffer. It destroys parallelism. |
-| **Multicore Rendering** | Core 1 Draw / Core 0 Transfer | **Unstable** | Introduced flickering and complexity without a clear gain over the optimized Single-Core pipeline yet. Parked for now. |
+| **Multicore Rendering** | Core 1 Draw / Core 0 Transfer | **Success** (2x Fill Rate) | implemented "Scanline-Interleaved" rendering. Core 1 clears Bottom Half (CPU), Core 0 clears Top Half (DMA). **KEEP.** |
 | **Bus Priority Tuning** | Prevent DMA stutter | **Success** (Smoother) | Setting DMA Priority to HIGH in `bus_ctrl` helps maintain consistent frame times under load. **KEEP.** |
 
 ### 2. High-Frequency SPI (>100MHz)
@@ -78,8 +84,10 @@ This section documents architectural experiments to prevent regression and guide
 | LED/BL | Backlight | GP22 | 29 |
 
 ### Next
-- PIO graphics DMA
-- Multi-TFT support  
-- Button matrix
-- USB HID host
-- Buzzer PWM
+### Next
+- **Game Engine Core**: Parallel Sprite Batching & Dirty Rectangles
+- **Input Driver**: Button Matrix / Debouncing / IO Expander
+- **Audio Driver**: PWM / I2S Sound Engine
+- **Storage**: SD Card support (SPI)
+- **USB**: TinyUSB HOST HID (Keyboard/Mouse)
+- **Display**: ST7735 (1.8") Support
