@@ -70,6 +70,33 @@ This section documents architectural experiments to prevent regression and guide
 *   **Driver**: 2-Cycle PIO, Mode 0 (Idle Low), 12mA Drive Strength
 *   **FPS**: 103 FPS (Solid, Artifact-Free)
 
+## Performance & Hardware Stress Test Matrix
+
+This matrix tracks the stability and performance of the engine across all supported clock and color profiles.
+
+| Profile | Format | CPU/SPI (MHz) | FPS | C0/C1 Use | RAM | Status | Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **STABLE** | RGB444 | 240 / 60 | 65 | 0% / 1% | 225K | ✅ Working | Baseline stability test |
+| **STABLE** | RGB332 | 240 / 60 | - | - | - | ❌ Failing | Static noise and black stripes |
+| **STABLE** | RGB565 | 240 / 60 | - | - | - | ❌ Failing | Static noise and black stripes |
+| **BALANCED** | RGB444 | 270 / 67.5 | 73 | 0% / 1% | 225K | ✅ Working | Stable bump |
+| **BALANCED** | RGB332 | 270 / 67.5 | - | - | - | ❌ Failing | Static noise and black stripes |
+| **BALANCED** | RGB565 | 270 / 67.5 | - | - | - | ❌ Failing | Static noise and black stripes |
+| **TURBO** | RGB444 | 160 / 80 | 86 | 0% / 2% | 225K | ✅ Working | |
+| **TURBO** | RGB332 | 160 / 80 | - | - | - | ❌ Failing | Static noise and black stripes |
+| **TURBO** | RGB565 | 160 / 80 | - | - | - | ❌ Failing | Static noise and black stripes |
+| **HIGH** | RGB444 | 190 / 95 | 102 | 0% / 2% | 225K | ✅ Working | Previous record level |
+| **HIGH** | RGB332 | 190 / 95 | - | - | - | ❌ Failing | Static noise and black stripes |
+| **HIGH** | RGB565 | 190 / 95 | - | - | - | ❌ Failing | Static noise and black stripes |
+| **MAX** | RGB444 | 220 / 110 | 119 | 0% / 2% | 225K | ⚠️ Glitchy | Cascading pixels / signal noise |
+| **MAX** | RGB332 | 220 / 110 | - | - | - | ❌ Failing | Static noise and black stripes |
+| **MAX** | RGB565 | 220 / 110 | - | - | - | ❌ Failing | Static noise and black stripes |
+| **EXTREME** | RGB444 | 266 / 133 | 143 | 0% / 2% | 225K | ⚠️ Glitchy | Background turns black |
+| **EXTREME** | RGB332 | 266 / 133 | - | - | - | ❌ Failing | Static noise and black stripes |
+| **EXTREME** | RGB565 | 266 / 133 | - | - | - | ❌ Failing | Static noise and black stripes |
+
+**Note**: Current failures (static/stripes) appear to be driver-related regressions.
+
 ## 2.8" TFT Wiring
 
 | TFT Pin | Function | Pico GPIO | Pin # |
@@ -83,8 +110,8 @@ This section documents architectural experiments to prevent regression and guide
 | CS | Chip Sel | GP17 | 22 |
 | LED/BL | Backlight | GP22 | 29 |
 
-### Next
-### Next
+## Roadmap & Tasks
+- **Bugfix**: Investigate and fix RGB565 and RGB332 modes (Regression).
 - **Game Engine Core**: Parallel Sprite Batching & Dirty Rectangles
 - **Input Driver**: Button Matrix / Debouncing / IO Expander
 - **Audio Driver**: PWM / I2S Sound Engine

@@ -131,6 +131,14 @@
 - **Auto-Detection**: HUD now automatically detects and displays resolution and pixel format.
 - **System Profiling**: Integrated `mallinfo` for accurate heap utilization tracking.
 
+### 17. Comprehensive Stress Test & Regression Audit
+- **Stress Test**: Verified all 18 combinations of Clock Profiles and Pixel Formats.
+- **Performance Record**: Achieved **143 FPS** in RGB444 on `EXTREME` profile (266MHz CPU / 133MHz SPI).
+- **Identified Regressions**:
+    - **RGB565**: Currently failing on all profiles (static/stripes).
+    - **RGB332**: Currently failing on all profiles (static/stripes).
+- **Diagnosis**: Failures appear related to recent driver/transport refactors rather than just hardware limits, as RGB565 was previously stable.
+
 ---
 
 ## Current Roadmap & Tasks
@@ -141,9 +149,9 @@
 - [x] **Command Throttling**: Dynamic SPI frequency switching.
 - [x] **Zero-Wait Sync**: PIO hardware-level synchronization.
 - [x] **Multicore Rendering**: Core 1 offloading (Complete).
-- [ ] **120FPS+ Hardware Validation**: Debug EXTREME profile.
 
 ### Feature Parity & Stability
+- [ ] **Bugfix**: Investigate and fix RGB565 and RGB332 regression.
 - [x] **Decouple Transport/Panel**: generic transport interface (Complete).
 - [ ] Implement ST7735 driver (1.8" TFT).
 - [ ] Add Button Matrix Input Driver.
