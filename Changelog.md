@@ -99,8 +99,34 @@
 - [x] **Optimize RGB332 Expansion**: Integrated LUT for zero-latency expansion.
 - [x] **Command Throttling**: Implemented dynamic SPI frequency switching for stability.
 - [x] **Zero-Wait Sync**: Implemented hardware-level PIO synchronization.
-- [ ] **Multicore Rendering**: Offload drawing to Core 1 (In development).
-- [ ] **120FPS+ Hardware Validation**: Debug EXTREME profile on shorter signal paths.
+### 13. Failed Optimization: Turbo DMA (32-bit Transfers)
+- **Goal**: Improve bus throughput by using 32-bit DMA transfers (`DMA_SIZE_32`)
+  and PIO Autopull 32, minimizing bus contention.
+- **Attempt A (32-bit + BSWAP)**: Resulted in vertical stripes (alternating
+  correct and garbage pixels), indicating a byte alignment mismatch between
+  RP2040 32-bit LE read and Display 16-bit BE expectation.
+- **Attempt B (RGB565 Aligned + Single Buffer Sync)**: Achieved stable 59 FPS
+  but persistent vertical stripes remained even with aligned memory, proving
+  that standard PIO shifting cannot correctly serialize 32-bit words for the
+  ST7789 without custom byte-shuffling assembly.
+- **Outcome**: Fully reverted to 8-bit DMA (Stable 102 FPS). The code for
+  32-bit optimization was deemed too unstable/complex to keep in the codebase.
+
+---
+
+## Current Roadmap & Tasks
+
+### High Priority: Performance Improvements
+- [x] **Optimize RGB444 Filling**: Implemented fast-path 32-bit block writes
+  for aligned rectangles.
+- [x] **Optimize RGB332 Expansion**: Integrated LUT for zero-latency expansion.
+- [x] **Command Throttling**: Implemented dynamic SPI frequency switching
+  for stability.
+- [x] **Zero-Wait Sync**: Implemented hardware-level PIO synchronization.
+- [x] **Multicore Rendering**: Offload drawing to Core 1 (Completed:
+  Scanline-Interleaved Clear).
+- [ ] **120FPS+ Hardware Validation**: Debug EXTREME profile on shorter
+  signal paths.
 
 ### Feature Parity & Stability
 - [ ] Ensure all performance improvements support RGB565 and RGB444 modes.
