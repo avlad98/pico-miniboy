@@ -12,10 +12,7 @@ pico_enable_stdio_usb(bouncing_ball 1)
 # Link libraries
 target_link_libraries(bouncing_ball
     pico_stdlib
-    system_config
-    display
-    graphics
-    profiler
+    miniboy_core
 )
 
 pico_add_extra_outputs(bouncing_ball)

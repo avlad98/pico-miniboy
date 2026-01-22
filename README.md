@@ -42,6 +42,13 @@ A modular profiling library (`lib/profiler`) is integrated to track real-time sy
 - **HUD**: Draws a non-intrusive bar at the top of the screen.
 - **Usage**: Call `profiler_update()` and `profiler_draw()` in your main loop.
 
+## Software Architecture
+The project uses a layered architecture to separate hardware drivers from game logic:
+1.  **Application Layer** (`demos/`): Implements `miniapp_desc_t` (Init/Update/Draw). Agnostic to hardware details.
+2.  **Core Engine** (`lib/core`): Manages the main loop, system clocks, display initialization, and resource management.
+3.  **Graphics Subsystem** (`lib/graphics`): Provides `surface_t`, drawing primitives, fonts, and multicore rendering services.
+4.  **Hardware Drivers** (`lib/display`, `lib/system_config`): Zero-wait PIO SPI transport, DMA management, and RP2040 clock control.
+
 ## Optimization Roadmap & Experimentation Log
 
 This section documents architectural experiments to prevent regression and guide future performance tuning.

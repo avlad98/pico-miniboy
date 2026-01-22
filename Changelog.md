@@ -92,13 +92,6 @@
 
 ---
 
-## Current Roadmap & Tasks
-
-### High Priority: Performance Improvements
-- [x] **Optimize RGB444 Filling**: Implemented fast-path 32-bit block writes for aligned rectangles.
-- [x] **Optimize RGB332 Expansion**: Integrated LUT for zero-latency expansion.
-- [x] **Command Throttling**: Implemented dynamic SPI frequency switching for stability.
-- [x] **Zero-Wait Sync**: Implemented hardware-level PIO synchronization.
 ### 13. Failed Optimization: Turbo DMA (32-bit Transfers)
 - **Goal**: Improve bus throughput by using 32-bit DMA transfers (`DMA_SIZE_32`)
   and PIO Autopull 32, minimizing bus contention.
