@@ -32,5 +32,6 @@ void display_push_pixels(uint16_t color, uint32_t count);
 // Get dimensions
 uint16_t display_get_width(void);
 uint16_t display_get_height(void);
+bool display_is_busy(void);
 
 #endif

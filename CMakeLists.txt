@@ -48,3 +48,4 @@ add_subdirectory(lib)
 
 # Include demos
 add_subdirectory(demos/bouncing_ball)
+add_subdirectory(demos/stress_test)

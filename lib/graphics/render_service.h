@@ -8,6 +8,7 @@ typedef enum {
   RENDER_CMD_IDLE,
   RENDER_CMD_CLEAR,
   RENDER_CMD_RECT,
+  RENDER_CMD_CALLBACK,
   RENDER_CMD_EXIT
 } render_command_t;
 
@@ -19,6 +20,8 @@ typedef struct {
   uint32_t start_offset;
   uint32_t count;
   int x, y, w, h;
+  void (*callback)(void *);
+  void *callback_arg;
 } render_job_t;
 
 // Initialize the second core for rendering jobs

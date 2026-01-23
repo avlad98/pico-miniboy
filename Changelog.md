@@ -144,6 +144,14 @@
 - [x] **Zero-Wait Sync**: PIO hardware-level synchronization.
 - [x] **Multicore Rendering**: Core 1 offloading (Complete).
 
+### 19. Advanced Pipelined Flush & Core 1 Offloading
+- **Message**: "feat(graphics): Core 1 Offloaded Flush & Pipelined RGB332 Optimization"
+- **Optimized RGB332 Flush**: Replaced serial line-by-line flush with an async pipelined loop utilizing single-window mode.
+- **Core 1 Offloading**: Implemented `RENDER_CMD_CALLBACK` to offload the RGB332 flush task entirely to Core 1.
+- **Performance**: RGB332 1-FB performance now matches RGB444 (37 FPS in heavy stress test) while using only 76KB RAM.
+- **Fix**: Resolved hanging issue in RGB444 mode by properly tracking swap type (DMA vs Core 1).
+- **Stress Test**: Added "Chaos Mode" demo (30 balls, lines, rects) validating 99% Core 0 utilization.
+
 ### Feature Parity & Stability
 - [x] **Bugfix**: Investigate and fix RGB565 and RGB332 regression.
 - [x] **Decouple Transport/Panel**: generic transport interface (Complete).

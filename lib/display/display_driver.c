@@ -140,3 +140,9 @@ void display_push_pixels(uint16_t color, uint32_t count) {
 
 uint16_t display_get_width(void) { return current_config.width; }
 uint16_t display_get_height(void) { return current_config.height; }
+
+bool display_is_busy(void) {
+  display_transport_t *t = current_config.transport;
+  if(t && t->is_busy) return t->is_busy(t);
+  return false;
+}

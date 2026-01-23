@@ -13,7 +13,13 @@ static uint8_t front_buffer_idx = 0; // Only relevant for >1 buffers
 static uint8_t buffer_count = 2;     // Default
 static uint16_t rgb332_to_rgb565[256];
 static bool lut_initialized = false;
-static bool swap_active = false; // DMA is busy
+typedef enum {
+    SWAP_IDLE = 0,
+    SWAP_DMA,
+    SWAP_CORE1
+} swap_state_t;
+
+static swap_state_t swap_active = SWAP_IDLE;
 
 // Instrumentation
 static volatile uint32_t last_wait_time_us = 0;
@@ -274,12 +280,62 @@ void framebuffer_fill_circle(int cx, int cy, int radius, uint16_t color) {
   draw_circle(framebuffer_get_surface(), cx, cy, radius, color);
 }
 
+// --- Core 1 Task ---
+static void flush_rgb332_task(void *arg) {
+    surface_t *surf = (surface_t *)arg;
+    uint16_t *expansion_base = (uint16_t *)expansion_buffer;
+    uint32_t stride = surf->width;
+    
+    // Set Window ONCE
+    display_set_window(0, 0, surf->width - 1, surf->height - 1);
+    display_start_bulk();
+
+    // 1. Pre-fill first buffer (Line 0)
+    {
+      uint8_t *src = surf->pixels;
+      uint16_t *dst = expansion_base; // Buffer 0
+      for (int x = 0; x < stride; x++) {
+        dst[x] = rgb332_to_rgb565[src[x]];
+      }
+    }
+
+    // 2. Main Loop
+    for (int y = 0; y < surf->height; y++) {
+      int curr_buf_idx = y % 2;
+      int next_buf_idx = (y + 1) % 2;
+      uint16_t *curr_buf = expansion_base + (curr_buf_idx * stride);
+      uint16_t *next_buf = expansion_base + (next_buf_idx * stride);
+
+      // Wait for previous line DMA
+      while(display_is_busy()) ; 
+      
+      display_send_buffer((uint8_t*)curr_buf, stride * 2);
+
+      // Convert next line
+      if (y < surf->height - 1) {
+        uint8_t *src = surf->pixels + ((y + 1) * stride);
+        for (int x = 0; x < stride; x++) {
+          next_buf[x] = rgb332_to_rgb565[src[x]];
+        }
+      }
+    }
+
+    display_end_bulk(); 
+}
+
 void framebuffer_wait_last_swap(void) {
   if (swap_active) {
     uint32_t start = time_us_32();
-    display_end_bulk(); // Wait for DMA
+    
+    if (swap_active == SWAP_CORE1) {
+        render_service_wait(); // Wait for Core 1 flush task
+        display_end_bulk();    // Ensure DMA is fully complete
+    } else {
+        display_end_bulk();    // Standard DMA wait
+    }
+    
     last_wait_time_us += (time_us_32() - start);
-    swap_active = false;
+    swap_active = SWAP_IDLE;
   }
 }
 
@@ -289,37 +345,30 @@ void framebuffer_swap_async(void) {
   uint32_t send_size = surf->size;
 
   if (surf->format == PIXEL_FORMAT_RGB332) {
-    // RGB332 Streaming Mode (Line-by-Line)
-    // Minimizes RAM usage to enable Double/Triple buffering.
-    framebuffer_wait_last_swap(); // Ensure previous frame is done
+    // RGB332: Offload to Core 1
+    framebuffer_wait_last_swap();
     
-    uint16_t *line_buf = (uint16_t *)expansion_buffer;
-    
-    for (int y = 0; y < surf->height; y++) {
-        // 1. Convert Line
-        uint8_t *src = surf->pixels + (y * surf->width);
-        for (int x = 0; x < surf->width; x++) {
-            line_buf[x] = rgb332_to_rgb565[src[x]];
-        }
-        
-        // 2. Send Line Sync
-        display_set_window(0, y, surf->width - 1, y);
-        display_start_bulk();
-        display_send_buffer((uint8_t*)line_buf, surf->width * 2);
-        display_end_bulk(); // Waits for DMA
-    }
-    
-    // Update Buffer Index manually as we sent the frame line-by-line
-    
+    // Submit FLUSH job
+    render_job_t job = {
+        .type = RENDER_CMD_CALLBACK,
+        .surface = surf, // Pass surface as arg
+        .callback = flush_rgb332_task,
+        .callback_arg = surf
+    };
+    render_service_submit(&job);
+    swap_active = SWAP_CORE1;
+
+    // Update Buffer Index immediately (Core 0 is free to draw)
     if (buffer_count == 2) {
         back_buffer_idx = 1 - back_buffer_idx;
+        // Pointer passed to Core 1 is safe; changing index affects next frame only.
     } else if (buffer_count == 3) {
         back_buffer_idx = (back_buffer_idx + 1) % 3;
     }
     
-    swap_active = false; // We finished synchronously.
     return;
   }
+
 
   // --- Swap Logic ---
 
@@ -331,7 +380,7 @@ void framebuffer_swap_async(void) {
     display_set_window(0, 0, surf->width - 1, surf->height - 1);
     display_start_bulk();
     display_send_buffer(send_buffer, send_size);
-    swap_active = true;
+    swap_active = SWAP_DMA;
 
     // Tearing artifacts are expected in Single Buffer mode.
   } else if (buffer_count == 2) {
@@ -343,7 +392,7 @@ void framebuffer_swap_async(void) {
     display_set_window(0, 0, surf->width - 1, surf->height - 1);
     display_start_bulk();
     display_send_buffer(send_buffer, send_size);
-    swap_active = true;
+    swap_active = SWAP_DMA;
 
     // 3. Flip index
     back_buffer_idx = 1 - back_buffer_idx;
@@ -354,7 +403,7 @@ void framebuffer_swap_async(void) {
     display_set_window(0, 0, surf->width - 1, surf->height - 1);
     display_start_bulk();
     display_send_buffer(send_buffer, send_size);
-    swap_active = true;
+    swap_active = SWAP_DMA;
 
     back_buffer_idx = (back_buffer_idx + 1) % 3;
   }

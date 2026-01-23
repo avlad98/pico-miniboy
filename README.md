@@ -81,6 +81,8 @@ This section documents architectural experiments to prevent regression and guide
 
 This matrix tracks the stability and performance of the engine across all supported clock and color profiles.
 
+### Standard Benchmarks (Bouncing Ball)
+
 | Profile | Format | FB | CPU/SPI (MHz) | FPS | C0/C1 Use | RAM | Status | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **STABLE** | RGB444 | 2 | 240 / 60 | 65 | 0% / 1% | 225K | ✅ Working | Baseline stability test |
@@ -99,6 +101,15 @@ This matrix tracks the stability and performance of the engine across all suppor
 | **MAX** | RGB444 | 2 | 220 / 110 | 119 | 0% / 2% | 225K | ⚠️ Glitchy | Cascading pixels / signal noise |
 | **EXTREME** | RGB444 | 2 | 266 / 133 | 143 | 0% / 2% | 225K | ⚠️ Glitchy | Background turns black |
 
+### CPU Stress Test Benchmarks (Software Rendering)
+*Scene: 30 Balls + 20 Rects + Lines (Heavy CPU Load)*
+
+| Profile | Format | FB | FPS | Core 0 | Core 1 | RAM | Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **HIGH** | RGB444 | 1 | 37 | 0% | 1% | 112K | DMA Idle |
+| **HIGH** | RGB332 | 1 | 37 | 0% | 50% | 76K | Core 1 Offload |
+| **HIGH** | RGB565 | 1 | 39 | 0% | 1% | 150K | DMA Idle |
+
 **Note**: Current failures (static/stripes) appear to be driver-related regressions.
 
 ## 2.8" TFT Wiring
@@ -115,7 +126,6 @@ This matrix tracks the stability and performance of the engine across all suppor
 | LED/BL | Backlight | GP22 | 29 |
 
 ## Roadmap & Tasks
-- **Bugfix**: Investigate and fix RGB565 and RGB332 modes (Regression).
 - **Game Engine Core**: Parallel Sprite Batching & Dirty Rectangles
 - **Input Driver**: Button Matrix / Debouncing / IO Expander
 - **Audio Driver**: PWM / I2S Sound Engine

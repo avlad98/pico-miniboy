@@ -46,6 +46,10 @@ static void core1_render_entry() {
         while (ptr < end)
           *ptr++ = val;
       }
+    } else if (cmd == RENDER_CMD_CALLBACK) {
+      if (current_job.callback) {
+        current_job.callback(current_job.callback_arg);
+      }
     }
 
   done:
